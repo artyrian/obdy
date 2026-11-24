@@ -6,9 +6,10 @@ import { FakeTransport } from "./transport/fake.js";
 import * as settings from "./core/settings.js";
 import { refFor, status as refStatus } from "./core/refs.js";
 import * as guide from "./core/guide.js";
+import * as obdb from "./core/obdb.js";
 import { Series, draw, rateLabel } from "./ui/chart.js";
 
-const VERSION = "0.2.1"; // keep in sync with package.json (checked by tests)
+const VERSION = "0.3.0"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
 // write an extra S line when one of these moved by at least this much
@@ -21,7 +22,8 @@ const BATT_POLL_MS = 15000;
 const $ = (id) => document.getElementById(id);
 const st = { elm: null, transport: null, j: null, polling: false, recording: false, wake: null,
   minmax: {}, lastW: 0, lastVals: {}, lastDtc: 0, lastBatt: 0, dtcSeen: new Set(), misLive: {}, t0: 0,
-  cfg: settings.load(), lastPoll: {}, latest: {}, unwritten: {}, series: {}, units: {} };
+  cfg: settings.load(), lastPoll: {}, latest: {}, unwritten: {}, series: {}, units: {},
+  vehicle: null, profile: null, hdr: "7E0", extLast: {}, extFail: {}, extBad: new Set(), extOk: new Set() };
 
 // ---------------------------------------------------------------- env
 const ua = navigator.userAgent;
@@ -106,15 +108,28 @@ const dispUnit = (unit) => (unit === "kPa" ? "psi" : unit);
 const dispVal = (v, unit) => (v == null ? null : unit === "kPa" ? v * KPA_PSI : v);
 const fmtDisp = (v, unit) => (v == null ? "—" : unit === "kPa" ? v.toFixed(0) : unit === "λ" ? v.toFixed(3)
   : Math.abs(v) >= 100 || Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1));
-const unitOf = (c) => st.units[c] ?? (st.units[c] = decode(c, null).unit);
-const labelOf = (c) => settings.LABEL[c] || c;
+const isExt = (c) => c.startsWith("x.");
+const extSig = (c) => st.profile?.sigs.get(c);
+const unitOf = (c) => (isExt(c) ? extSig(c)?.sig.unit ?? "" : st.units[c] ?? (st.units[c] = decode(c, null).unit));
+// short tile labels for well-known manufacturer values (full name stays in the tooltip and Settings)
+const SHORT = { "x.MUSTANG_LPFP_ACT": "Low-side fuel", "x.MUSTANG_LPFP_DES": "Low-side desired",
+  "x.ECU_HPFP_Desired": "Rail desired", "x.MUSTANG_PCM_ENG_EOP_RAW": "Oil pressure",
+  ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [`x.MUSTANG_PCM_MISF_ACCEL_CYL${n}_NORM`, `Misfire acc. cyl ${n}`])) };
+const labelOf = (c) => (isExt(c) ? SHORT[c] ?? extSig(c)?.sig.name ?? c : settings.LABEL[c] || c);
 // unknown until connected; RPM is always polled (liveness check)
-const isSupported = (c) => c === "010C" || !st.supported || st.supported.has(parseInt(c.slice(2), 16));
+const isSupported = (c) => (isExt(c) ? !st.extBad.has(extSig(c)?.cmd.key)
+  : c === "010C" || !st.supported || st.supported.has(parseInt(c.slice(2), 16)));
+/** Enabled manufacturer (OBDb) values for the loaded profile. */
+const extCfg = () => (st.profile && st.cfg.useProfile ? st.cfg.ext[st.profile.repo] ?? {} : {});
+const extEnabled = () => Object.keys(extCfg()).filter((k) => extCfg()[k].on && st.profile.sigs.has(k));
+const allKeys = () => [...settings.enabled(st.cfg), ...extEnabled()];
+// target lines drawn dashed on a chart: value -> its "desired/commanded" partner
+const REF_LINE = { "0134": "0144", "0123": "x.ECU_HPFP_Desired", "x.MUSTANG_LPFP_ACT": "x.MUSTANG_LPFP_DES" };
 
 function buildTiles() {
   const open = st.open;
   $("tiles").innerHTML = "";
-  for (const c of settings.enabled(st.cfg)) {
+  for (const c of allKeys()) {
     const d = document.createElement("div");
     d.className = "tile"; d.id = "t" + c;
     d.tabIndex = 0; d.setAttribute("role", "button"); d.setAttribute("aria-expanded", "false");
@@ -122,6 +137,7 @@ function buildTiles() {
       <div class="t-val"><span class="v">—</span><span class="u"></span></div>
       <canvas class="spark" aria-hidden="true"></canvas><div class="mm"></div><div class="ref"></div>`;
     d.querySelector(".k").textContent = labelOf(c);
+    if (isExt(c)) { d.classList.add("ext"); d.title = `${extSig(c)?.sig.name} — OBDb/${st.profile.repo}`; }
     d.onclick = () => toggleTile(c);
     d.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTile(c); } };
     $("tiles").append(d);
@@ -198,7 +214,11 @@ async function connect(demo) {
     renderSettings();
     setConnected(true);
     st.minmax = {}; st.lastPoll = {}; st.latest = {}; st.unwritten = {}; st.alive = undefined;
+    st.vehicle = null; st.hdr = "7E0";
+    if (st.profile) { st.extLast = {}; st.extFail = {}; st.extBad = new Set(); st.extOk = new Set(); }
     buildTiles();
+    renderVehicle();
+    if (probe.startsWith("41") && st.cfg.useProfile) await detectVehicle();
     pollLoop();
     if (st.cfg.autoRecord) await startRecording();
   } catch (e) {
@@ -252,9 +272,10 @@ async function pollLoop() {
       .filter((c) => isSupported(c) || ((st.lastPoll[c] = now0), false))
       // fast guided steps: only the fast set every cycle, the rest at most every 10 s
       .filter((c) => !fastStep || guide.FAST.has(c) || now0 - (st.lastPoll[c] ?? 0) >= 10000);
-    if (!list.length) { await guideTick({}, st.alive !== false); await sleep(Math.min(250, settings.nextDueIn(st.cfg, st.lastPoll, Date.now()) || 20)); continue; }
+    const extList = st.alive === false ? [] : dueExt(now0);
+    if (!list.length && !extList.length) { await guideTick({}, st.alive !== false); await sleep(Math.min(250, settings.nextDueIn(st.cfg, st.lastPoll, Date.now()) || 20)); continue; }
     const vals = {};
-    let alive = true;
+    let alive = st.alive !== false || list.includes("010C");
     for (const c of list) {
       if (!st.polling || !st.elm) return;
       const r = await st.elm.cmd(c, 2000);
@@ -270,6 +291,8 @@ async function pollLoop() {
       seriesOf(c).push(t, dispVal(d.value, d.unit));
       n++;
     }
+    if (alive && extList.length) n += await pollExt(extList, vals);
+    if (alive && st.cfg.useProfile && !st.vehicle && !st.detecting) await detectVehicle();
     Object.assign(st.unwritten, vals);
     const now = Date.now();
     const dt = (performance.now() - tRate) / 1000;
@@ -296,6 +319,164 @@ async function pollLoop() {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---------------------------------------------------------------- manufacturer values (OBDb profile)
+/** Profile commands due now: any enabled signal whose interval has passed; skips commands the car rejected. */
+function dueExt(now) {
+  if (!st.profile) return [];
+  const cfg = extCfg(), due = new Map();
+  for (const k of extEnabled()) {
+    const { cmd } = st.profile.sigs.get(k);
+    if (st.extBad.has(cmd.key)) continue;
+    const every = cfg[k].every;
+    if (now - (st.extLast[cmd.key] ?? -Infinity) >= every) due.set(cmd.key, cmd);
+  }
+  return [...due.values()];
+}
+
+async function pollExt(cmds, vals) {
+  let n = 0;
+  cmds.sort((a, b) => a.hdr.localeCompare(b.hdr));
+  for (const cmd of cmds) {
+    if (!st.polling || !st.elm) return n;
+    if (cmd.hdr !== st.hdr) { await st.elm.cmd("ATSH" + cmd.hdr, 1000); st.hdr = cmd.hdr; }
+    const r = await st.elm.cmd(cmd.cmd, 1500);
+    const t = Date.now();
+    st.extLast[cmd.key] = t;
+    n++;
+    const payload = obdb.payloadOf(r, cmd.cmd);
+    if (!payload) {
+      const f = (st.extFail[cmd.key] = (st.extFail[cmd.key] || 0) + 1);
+      if (f >= 3 && !st.extBad.has(cmd.key)) {
+        st.extBad.add(cmd.key);
+        log(`no answer from ${cmd.key} (${cmd.signals.map((x) => x.name).join(", ")}): ${r}`);
+        st.j?.w("LOG", { msg: `ext unsupported ${cmd.key} ${r}` });
+        renderSettings();
+      }
+      continue;
+    }
+    st.extFail[cmd.key] = 0;
+    st.extOk.add(cmd.key);
+    const on = extCfg();
+    for (const sig of cmd.signals) {
+      if (!on[sig.key]?.on) continue;
+      const v = obdb.decodeSignal(sig.fmt, payload);
+      vals[sig.key] = v;
+      if (typeof v !== "number") continue;
+      st.latest[sig.key] = v;
+      showTile(sig.key, v, sig.unit);
+      seriesOf(sig.key).push(t, dispVal(v, sig.unit));
+    }
+  }
+  if (st.hdr !== "7E0" && st.elm) { await st.elm.cmd("ATSH7E0", 1000); st.hdr = "7E0"; }
+  return n;
+}
+
+// curated defaults per profile (the rest is off until enabled in Settings)
+const PROFILE_DEFAULTS = {
+  "Ford-Mustang": ["MUSTANG_LPFP_ACT", "MUSTANG_LPFP_DES", "[ECU] HPFP Desired", "MUSTANG_PCM_MISF_ACCEL_CYL1_NORM",
+    "MUSTANG_PCM_MISF_ACCEL_CYL2_NORM", "MUSTANG_PCM_MISF_ACCEL_CYL3_NORM", "MUSTANG_PCM_MISF_ACCEL_CYL4_NORM"],
+};
+
+async function fetchJson(url, ms = 6000) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ctl.signal });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
+/** OBDb signalset: fresh cache → network → stale cache → bundled copy. */
+async function loadSignalset(repo) {
+  const key = "obdy.obdb." + repo;
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(key) || "null"); } catch { /* ignore */ }
+  if (cached && Date.now() - cached.at < 7 * 864e5) return { data: cached.data, src: "cache" };
+  try {
+    const data = await fetchJson(obdb.RAW_URL(repo));
+    try { localStorage.setItem(key, JSON.stringify({ at: Date.now(), data })); } catch { /* quota */ }
+    return { data, src: "OBDb" };
+  } catch (e) {
+    if (cached) return { data: cached.data, src: "cache (offline)" };
+    try { return { data: await fetchJson(`profiles/${repo}.json`, 4000), src: "bundled" }; } catch { /* not bundled */ }
+    throw e;
+  }
+}
+
+async function useProfile(repos, year) {
+  for (const repo of repos) {
+    try {
+      const { data, src } = await loadSignalset(repo);
+      const cmds = obdb.commandsFor(data, year);
+      if (!cmds.length) continue;
+      const sigs = new Map();
+      for (const cmd of cmds) for (const sig of cmd.signals) if (!sigs.has(sig.key)) sigs.set(sig.key, { sig, cmd });
+      st.profile = { repo, year, src, cmds, sigs };
+      st.extLast = {}; st.extFail = {}; st.extBad = new Set(); st.extOk = new Set();
+      if (!st.cfg.ext[repo]) { // first time on this car: curated defaults
+        st.cfg.ext[repo] = {};
+        for (const id of PROFILE_DEFAULTS[repo] || []) {
+          const k = obdb.keyOf(id), hit = sigs.get(k);
+          if (hit) st.cfg.ext[repo][k] = { on: true, every: settings.EXT_EVERY.find((e) => e >= hit.cmd.every) ?? 1000 };
+        }
+        settings.save(st.cfg);
+      }
+      log(`profile ${repo} (${src}): ${sigs.size} values, ${extEnabled().length} on`);
+      st.j?.w("PROFILE", { repo, src, year: year ?? "", values: sigs.size, on: extEnabled().length });
+      if (st.recording) writeKeys(extEnabled());
+      return true;
+    } catch (e) {
+      log(`profile ${repo}: ${e.message}`);
+    }
+  }
+  return false;
+}
+
+/** Read the VIN, decode make/model/year (NHTSA vPIC, offline fallback) and load the matching OBDb profile. */
+async function detectVehicle() {
+  if (st.detecting || !st.elm) return;
+  st.detecting = true;
+  try {
+    const man = st.cfg.vehicle;
+    const vin = obdb.parseVin(await st.elm.cmd("0902", 4000));
+    let v = { vin, make: null, model: null, year: vin ? obdb.vinYear(vin) : null, engine: "", src: "" };
+    if (vin) {
+      try {
+        const x = (await fetchJson(`https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/${vin}?format=json`)).Results?.[0] || {};
+        v = { ...v, make: x.Make || null, model: x.Model || null, year: Number(x.ModelYear) || v.year,
+          engine: [x.DisplacementL && `${(+x.DisplacementL).toFixed(1)}L`, x.EngineCylinders && `${x.EngineCylinders} cyl`].filter(Boolean).join(" "), src: "vPIC" };
+      } catch {
+        v = { ...v, ...Object.fromEntries(Object.entries(obdb.offlineDecode(vin)).filter(([, x]) => x)), src: "offline" };
+      }
+    }
+    st.vehicle = v;
+    st.j?.w("VEH", { vin: vin || "-", make: v.make || "-", model: v.model || "-", year: v.year || "-", engine: v.engine || "-", src: v.src || "-" });
+    log(vin ? `vehicle: ${[v.year, v.make, v.model, v.engine].filter(Boolean).join(" ")} (VIN ${vin})` : "vehicle: VIN not available");
+    const repos = man ? [man.repo] : obdb.repoCandidates(v.make, v.model);
+    if (repos.length) await useProfile(repos, man?.year ?? v.year);
+    buildTiles();
+    renderSettings();
+    renderVehicle();
+  } catch (e) {
+    log("vehicle detect: " + e.message);
+  } finally { st.detecting = false; }
+}
+
+function renderVehicle() {
+  const v = st.vehicle, p = st.profile;
+  const name = v ? [v.year, v.make && obdb.repoCandidates(v.make)[0], v.model, v.engine].filter(Boolean).join(" ") : "";
+  $("veh").textContent = !st.elm ? "" : !v ? "" : `${name || "Unknown car"}${p ? ` · ${extEnabled().length} manufacturer values` : ""}`;
+  $("veh-info").textContent = !v ? "Not detected yet — connect with the ignition on."
+    : `${name || "Unknown car"}${v.vin ? ` · VIN ${v.vin}` : ""}`;
+  $("veh-profile").innerHTML = "";
+  if (p) {
+    const a = document.createElement("a");
+    a.href = obdb.REPO_URL(p.repo); a.target = "_blank"; a.rel = "noopener"; a.textContent = `OBDb/${p.repo}`;
+    $("veh-profile").append("Profile ", a, ` (${p.src}) · ${p.sigs.size} values`);
+  } else if (v) $("veh-profile").textContent = st.cfg.useProfile ? "No OBDb profile found for this car — standard OBD-II only." : "Manufacturer values are off.";
+}
 
 async function pollBattery(rpm) {
   const v = await st.elm.voltage();
@@ -342,17 +523,25 @@ async function pollDtcMisfires() {
   }
 }
 
-async function startRecording() {
-  st.sess = "r" + Journal.newId().slice(9);
-  st.t0 = Date.now(); st.lastW = 0; st.lastDtc = 0; st.misLive = {};
+/** KEYS line: what each S-line key means (standard PID or OBDb value). */
+function writeKeys(list) {
   const keys = {};
-  for (const c of settings.enabled(st.cfg)) {
+  for (const c of list) {
+    if (isExt(c)) { const x = extSig(c); if (x) keys[c] = `${x.sig.name.replace(/[ /.,]+/g, "_")}[${x.sig.unit || "raw"}]{${x.cmd.key}}`; continue; }
     const d = decode(c, null);
     keys[c] = `${d.name.replace(/[ /.]+/g, "_")}[${d.unit || "raw"}]`;
   }
+  if (Object.keys(keys).length) st.j.w("KEYS", keys);
+}
+const describeCfg = () => ({ ...settings.describe(st.cfg), ...(st.profile ? { profile: st.profile.repo } : {}),
+  ...Object.fromEntries(extEnabled().map((k) => [k, extCfg()[k].every])) });
+
+async function startRecording() {
+  st.sess = "r" + Journal.newId().slice(9);
+  st.t0 = Date.now(); st.lastW = 0; st.lastDtc = 0; st.misLive = {};
   st.j.w("STEP", { sess: st.sess, id: "record", event: "start" });
-  st.j.w("KEYS", keys);
-  st.j.w("CFG", settings.describe(st.cfg));
+  writeKeys(allKeys());
+  st.j.w("CFG", describeCfg());
   st.unwritten = {}; st.lastVals = {};
   const d = await st.elm.dtcs();
   st.dtcSeen = new Set(Object.values(d).flatMap((x) => x.codes));
@@ -485,7 +674,7 @@ async function renderLogs() {
 // ---------------------------------------------------------------- charts tab
 const seriesOf = (c) => st.series[c] ?? (st.series[c] = new Series());
 const visible = (tab) => !$("tab-" + tab).hidden && document.visibilityState === "visible";
-const gapOf = (c) => Math.max(10000, 3 * (st.cfg.pids[c]?.every || 0));
+const gapOf = (c) => Math.max(10000, 3 * ((isExt(c) ? extCfg()[c]?.every : st.cfg.pids[c]?.every) || 0));
 
 function drawCharts() {
   if (!visible("live")) return;
@@ -497,7 +686,8 @@ function drawCharts() {
     t.querySelector(".hz").textContent = rateLabel(s.t, now);
     const r = refFor(c, st.latest);
     const band = r ? [dispVal(r.lo, unit), dispVal(r.hi, unit)] : null;
-    const ref = c === "0134" && st.cfg.pids["0144"]?.on ? seriesOf("0144") : null; // commanded lambda
+    const rk = REF_LINE[c];
+    const ref = rk && allKeys().includes(rk) ? seriesOf(rk) : null; // commanded/desired value, dashed
     draw(t.querySelector("canvas"), s, { now, windowMs, big, band, ref, gapMs: gapOf(c), fmtY: (y) => fmtDisp(y, unit) });
     if (big) {
       const pts = s.since(now - windowMs).v;
@@ -544,23 +734,102 @@ function renderSettings() {
     sel.onchange = () => { pc.every = Number(sel.value); applySettings(); };
     tb.append(tr);
   }
-  const n = settings.enabled(cfg).length;
-  $("set-est").textContent = `${n} values · log ≈ ${settings.estimateKbPerHour(cfg)} KB per hour of recording`;
+  const n = settings.enabled(cfg).length, ext = extEnabled();
+  $("set-est").textContent = `${n + ext.length} values · log ≈ `
+    + `${settings.estimateKbPerHour(cfg, 120, ext.map((k) => extCfg()[k].every))} KB per hour of recording`;
+  renderExt();
   $("rec-note").textContent = `Recording: a sample line every ${cfg.logEvery / 1000} s`
     + `${cfg.deadband ? " (plus on sudden jumps)" : ""}, only values polled since the last line; `
     + `DTCs and misfires every ${DTC_POLL_MS / 1000} s. Saved on this device immediately.`;
 }
+
+// manufacturer values list (Settings): grouped by OBDb "path", searchable
+const extOpen = new Set(["Engine"]);
+function renderExt() {
+  $("set-useprofile").checked = st.cfg.useProfile;
+  $("veh-repo").value = st.cfg.vehicle?.repo ?? "";
+  $("veh-year").value = st.cfg.vehicle?.year ?? "";
+  renderVehicle();
+  const box = $("ext-list"), p = st.profile;
+  $("ext-card").hidden = !p || !st.cfg.useProfile;
+  if (!p || !st.cfg.useProfile) return;
+  const q = $("ext-q").value.trim().toLowerCase(), cfg = (st.cfg.ext[p.repo] ??= {});
+  const groups = new Map();
+  for (const [k, { sig, cmd }] of p.sigs) {
+    if (q && !`${sig.name} ${sig.id} ${cmd.key} ${sig.path}`.toLowerCase().includes(q)) continue;
+    if (!groups.has(sig.path)) groups.set(sig.path, []);
+    groups.get(sig.path).push([k, sig, cmd]);
+  }
+  $("ext-count").textContent = `${extEnabled().length} on · ${p.sigs.size} available`;
+  box.innerHTML = "";
+  for (const [path, rows] of [...groups].sort((a, b) => (a[0] === "Engine" ? -1 : b[0] === "Engine" ? 1 : a[0].localeCompare(b[0])))) {
+    const det = document.createElement("details");
+    const on = rows.filter(([k]) => cfg[k]?.on).length;
+    det.open = !!q || extOpen.has(path) || on > 0;
+    det.ontoggle = () => (det.open ? extOpen.add(path) : extOpen.delete(path));
+    det.innerHTML = `<summary><b></b> <span class="muted small"></span></summary><table class="pids"><tbody></tbody></table>`;
+    det.querySelector("b").textContent = path;
+    det.querySelector("summary span").textContent = `${rows.length}${on ? ` · ${on} on` : ""}`;
+    const tb = det.querySelector("tbody");
+    // on first, then answered, then verified for this model year, then the rest
+    const rank = ([k, , cmd]) => (cfg[k]?.on ? 0 : st.extOk.has(cmd.key) ? 1 : cmd.verified ? 2 : st.extBad.has(cmd.key) ? 4 : 3);
+    rows.sort((a, b) => rank(a) - rank(b) || a[1].name.localeCompare(b[1].name));
+    for (const [k, sig, cmd] of rows) {
+      const c = cfg[k] ?? { on: false, every: settings.EXT_EVERY.find((e) => e >= cmd.every) ?? 1000 };
+      const tr = document.createElement("tr");
+      tr.className = c.on ? "" : "off";
+      tr.innerHTML = `<td><label class="chk"><input type="checkbox"><span></span></label></td>
+        <td><select aria-label="poll interval"></select></td><td class="muted small"></td>`;
+      tr.querySelector("label span").textContent = sig.name + (sig.unit ? `, ${sig.unit}` : "");
+      tr.querySelector("label").title = `${sig.id} · ${cmd.key}${sig.description ? " — " + sig.description : ""}`;
+      const status = st.extBad.has(cmd.key) ? "no answer" : st.extOk.has(cmd.key) ? "✓" : cmd.verified ? "" : "unverified";
+      const td = tr.querySelector("td.small");
+      td.textContent = status;
+      if (status === "no answer") td.className = "small warn"; else if (status === "✓") td.className = "small ok";
+      const cb = tr.querySelector("input"), sel = tr.querySelector("select");
+      cb.checked = c.on;
+      fillSelect(sel, settings.EXT_EVERY, c.every, (v) => `every ${v / 1000} s`);
+      sel.disabled = !c.on;
+      cb.onchange = () => { cfg[k] = { ...c, on: cb.checked }; st.extBad.delete(cmd.key); st.extFail[cmd.key] = 0; applySettings(); };
+      sel.onchange = () => { cfg[k] = { ...c, every: Number(sel.value) }; applySettings(); };
+      tb.append(tr);
+    }
+    box.append(det);
+  }
+  if (!groups.size) box.innerHTML = `<p class="muted small">Nothing matches “${q.replace(/[<>&]/g, "")}”.</p>`;
+}
+
+$("ext-q").oninput = () => renderExt();
+$("set-useprofile").onchange = async (e) => {
+  st.cfg.useProfile = e.target.checked;
+  applySettings();
+  if (st.cfg.useProfile && st.elm && !st.profile) { st.vehicle = null; await detectVehicle(); }
+};
+$("veh-detect").onclick = async () => {
+  if (!st.elm) { toast("connect the adapter first"); return; }
+  st.vehicle = null; st.profile = null;
+  await detectVehicle();
+};
+$("veh-load").onclick = async () => {
+  const repo = $("veh-repo").value.trim().replace(/\s+/g, "-"), year = parseInt($("veh-year").value, 10);
+  st.cfg.vehicle = repo ? { repo, year: Number.isInteger(year) ? year : null } : null;
+  applySettings();
+  if (!repo) { toast("cleared: profile follows the detected car"); return; }
+  if (!(await useProfile([repo], st.cfg.vehicle.year ?? st.vehicle?.year ?? null))) toast(`no OBDb profile “${repo}”`);
+  st.vehicle ??= { vin: null, make: null, model: null, year: st.cfg.vehicle.year, engine: "", src: "manual" };
+  buildTiles(); renderSettings();
+};
 
 function applySettings() {
   st.cfg = settings.normalize(st.cfg);
   settings.save(st.cfg);
   renderSettings();
   buildTiles();
-  for (const c of settings.enabled(st.cfg)) {
+  for (const c of allKeys()) {
     if (st.latest[c] != null) showTile(c, st.latest[c], unitOf(c));
   }
   syncWindow();
-  if (st.recording) st.j.w("CFG", settings.describe(st.cfg));
+  if (st.recording) { st.j.w("CFG", describeCfg()); writeKeys(extEnabled()); }
 }
 
 $("set-log").onchange = (e) => { st.cfg.logEvery = Number(e.target.value); applySettings(); };

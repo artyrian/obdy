@@ -25,6 +25,7 @@ export const PID_OPTIONS = [
 ];
 
 export const EVERY_CHOICES = [0, 1000, 2000, 5000, 10000, 30000];
+export const EXT_EVERY = [1000, 2000, 5000, 10000, 30000]; // manufacturer values: never every cycle (extra header switches)
 export const LOG_CHOICES = [500, 1000, 2000, 5000];
 export const WINDOW_CHOICES = [2, 5, 15, 30]; // chart window, minutes
 
@@ -37,6 +38,9 @@ export function defaults() {
     deadband: true,   // extra S line when a fast value jumps
     autoRecord: true, // start recording as soon as the adapter is connected
     window: 5,        // chart window, minutes
+    useProfile: true, // detect the car (VIN) and load its OBDb profile
+    vehicle: null,    // manual override: { repo: "Ford-Mustang", year: 2018 }
+    ext: {},          // OBDb profile values per repo: { "Ford-Mustang": { "x.MUSTANG_LPFP_ACT": { on, every } } }
     pids: Object.fromEntries(PID_OPTIONS.map((p) => [p.c, { on: p.on, every: p.every }])),
   };
 }
@@ -49,6 +53,19 @@ export function normalize(raw) {
   if (typeof raw.deadband === "boolean") d.deadband = raw.deadband;
   if (typeof raw.autoRecord === "boolean") d.autoRecord = raw.autoRecord;
   if (WINDOW_CHOICES.includes(raw.window)) d.window = raw.window;
+  if (typeof raw.useProfile === "boolean") d.useProfile = raw.useProfile;
+  if (raw.vehicle && typeof raw.vehicle.repo === "string" && /^[A-Za-z0-9-]{2,60}$/.test(raw.vehicle.repo)) {
+    d.vehicle = { repo: raw.vehicle.repo, year: Number.isInteger(raw.vehicle.year) ? raw.vehicle.year : null };
+  }
+  for (const [repo, sigs] of Object.entries(raw.ext && typeof raw.ext === "object" ? raw.ext : {})) {
+    if (!/^[A-Za-z0-9-]{2,60}$/.test(repo) || !sigs || typeof sigs !== "object") continue;
+    const out = {};
+    for (const [k, v] of Object.entries(sigs)) {
+      if (!/^x\.[A-Za-z0-9_]{1,80}$/.test(k) || !v || typeof v.on !== "boolean") continue;
+      out[k] = { on: v.on, every: EXT_EVERY.includes(v.every) ? v.every : 1000 };
+    }
+    d.ext[repo] = out;
+  }
   for (const c of Object.keys(d.pids)) {
     const p = raw.pids?.[c];
     if (!p) continue;
@@ -74,11 +91,12 @@ export function nextDueIn(cfg, last, now) {
 }
 
 /** Rough log growth, KB per hour of recording (S lines only; DTC/misfire lines add ~5%). */
-export function estimateKbPerHour(cfg, cycleMs = 120) {
+export function estimateKbPerHour(cfg, cycleMs = 120, extEvery = []) {
   const lineMs = Math.max(cfg.logEvery, cycleMs);
   const lines = 3_600_000 / lineMs;
   let fields = 0;
   for (const c of enabled(cfg)) fields += Math.min(1, lineMs / Math.max(cfg.pids[c].every, cycleMs));
+  for (const e of extEvery) fields += Math.min(1, lineMs / e) * 1.6; // longer keys
   const bytes = lines * (42 + fields * 13) * (cfg.deadband ? 1.3 : 1);
   return Math.round(bytes / 1024);
 }

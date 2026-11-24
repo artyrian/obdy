@@ -76,3 +76,13 @@ test("rateLabel: period in seconds, empty when stale", () => {
   assert.equal(rateLabel([100000], 100500), "");
   assert.equal(rateLabel(slow, 300000), "");
 });
+
+test("profile settings: ext values validated per repo", () => {
+  const c = S.normalize({ useProfile: false, vehicle: { repo: "Ford-Mustang", year: 2018 },
+    ext: { "Ford-Mustang": { "x.MUSTANG_LPFP_ACT": { on: true, every: 0 }, "bad key": { on: true } }, "../evil": {} } });
+  assert.equal(c.useProfile, false);
+  assert.deepEqual(c.vehicle, { repo: "Ford-Mustang", year: 2018 });
+  assert.deepEqual(c.ext, { "Ford-Mustang": { "x.MUSTANG_LPFP_ACT": { on: true, every: 1000 } } });
+  assert.equal(S.normalize({ vehicle: { repo: "a b" } }).vehicle, null);
+  assert.ok(S.estimateKbPerHour(c, 120, [1000, 1000]) > S.estimateKbPerHour(c));
+});

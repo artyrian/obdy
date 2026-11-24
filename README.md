@@ -15,6 +15,9 @@ No app to install, no account, all data stays on your phone.
 
 - **Live dashboard.** RPM, fuel rail pressure, fuel trims, lambda, coolant, battery and more, each with a mini chart.
   Tap a tile for a full chart.
+- **Knows your car.** Reads the VIN, detects make, model and year, and loads the car's manufacturer values
+  from the community database [OBDb](https://github.com/OBDb), e.g. low-side fuel pressure or misfire per cylinder
+  on a Mustang. Pick more in Settings; values the car doesn't answer are skipped.
 - **Normal ranges.** A green band shows what's normal right now (engine off, warming up, idle).
   Values outside it turn orange or red.
 - **Trouble codes and misfires.** Stored, pending and permanent codes, freeze frame, misfire counts per cylinder.
@@ -50,8 +53,11 @@ No app to install, no account, all data stays on your phone.
 ## Compatibility
 
 Built and tested on a **Ford Mustang 2.3 EcoBoost**. Standard OBD-II (live data, codes, freeze frame) works on most
-cars from 2008 on. Some parts are tuned for Ford and may not fit other makes: misfire counters, normal ranges and
-guided-test thresholds. obdy is a diagnostic aid, not a replacement for a professional scan tool.
+cars from 2008 on, and manufacturer values work wherever OBDb has a profile for the car. Some parts are tuned for Ford
+and may not fit other makes: misfire counters, normal ranges and guided-test thresholds.
+obdy is a diagnostic aid, not a replacement for a professional scan tool.
+
+Manufacturer values: [OBDb](https://github.com/OBDb) (CC BY-SA 4.0). VIN decoding: NHTSA vPIC.
 
 ---
 

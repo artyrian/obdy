@@ -210,3 +210,17 @@ table.pids tr.off .chk span { color: var(--muted); }
   :root:not([data-theme="light"]) .icon-btn .i-sun { display: block; }
   :root:not([data-theme="light"]) .icon-btn .i-moon { display: none; }
 }
+
+/* vehicle + manufacturer values */
+.veh { margin: -4px 0 8px; }
+.veh:empty { display: none; }
+.veh-info { margin: 0 0 4px; font-weight: 600; }
+input.text { font: inherit; font-size: 15px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--card); color: var(--text); min-height: 40px; min-width: 0; }
+input.text.year { width: 84px; }
+input.text.search { width: 100%; margin: 4px 0 8px; }
+details.manual { margin-top: 6px; }
+details summary { cursor: pointer; padding: 6px 0; }
+#ext-list details { border-top: 1px solid var(--line); }
+#ext-list details:first-child { border-top: 0; }
+@media (max-width: 420px) { input.text { font-size: 16px; } #veh-repo { flex: 1; } }

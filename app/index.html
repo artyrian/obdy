@@ -56,6 +56,7 @@
 
   <main>
     <section id="tab-live" class="tab">
+      <div id="veh" class="muted small veh"></div>
       <div class="livebar">
         <span id="rate" class="muted small rate"></span>
         <label class="inline small">Chart <select id="chart-window" aria-label="chart window"></select></label>
@@ -96,6 +97,31 @@
 
     <section id="tab-settings" class="tab" hidden>
       <div class="card">
+        <h4>Vehicle</h4>
+        <p id="veh-info" class="veh-info">Not detected yet — connect with the ignition on.</p>
+        <p id="veh-profile" class="muted small"></p>
+        <div class="form">
+          <label class="chk"><input type="checkbox" id="set-useprofile"><span>Detect the car and read manufacturer values (OBDb)</span></label>
+        </div>
+        <div class="bar"><button id="veh-detect">Detect again</button></div>
+        <details class="manual">
+          <summary class="small">Choose the profile manually</summary>
+          <div class="bar">
+            <input id="veh-repo" class="text" placeholder="Ford-Mustang" aria-label="OBDb repository (Make-Model)" autocomplete="off" spellcheck="false">
+            <input id="veh-year" class="text year" placeholder="2018" inputmode="numeric" aria-label="Model year">
+            <button id="veh-load">Load</button>
+          </div>
+          <p class="muted small">Make-Model as in <a href="https://github.com/OBDb" target="_blank" rel="noopener">OBDb</a>. Leave empty to follow the detected car.</p>
+        </details>
+      </div>
+      <div class="card" id="ext-card" hidden>
+        <div class="g-head"><h4>Manufacturer values</h4><span id="ext-count" class="muted small"></span></div>
+        <p class="muted small">From the car's OBDb profile. Values the car doesn't answer are marked and skipped.
+          “unverified” — not yet confirmed for this model year.</p>
+        <input id="ext-q" class="text search" type="search" placeholder="Search: fuel, oil, misfire…" aria-label="Search manufacturer values">
+        <div id="ext-list"></div>
+      </div>
+      <div class="card">
         <h4>Appearance</h4>
         <div class="seg" id="theme" role="radiogroup" aria-label="Theme">
           <button type="button" data-theme="auto" role="radio">Auto</button>
@@ -128,8 +154,10 @@
         <h4>About</h4>
         <p class="small" style="margin:0 0 6px">Built and tested on a <b>Ford Mustang 2.3 EcoBoost</b> with a UniCarScan UCSI-2100 (BLE ELM327).
           Standard OBD-II (live PIDs, DTCs, freeze frame) should work on most 2008+ cars with CAN.</p>
-        <p class="small muted" style="margin:0">Ford-tuned parts may not fit other cars: Mode 06 misfire MIDs, normal ranges
+        <p class="small muted" style="margin:0 0 6px">Ford-tuned parts may not fit other cars: Mode 06 misfire MIDs, normal ranges
           (<i>ref</i>), guided-test thresholds and the P008A notes. Not a replacement for a professional scan tool.</p>
+        <p class="small muted" style="margin:0">Manufacturer values come from <a href="https://github.com/OBDb" target="_blank" rel="noopener">OBDb</a>
+          (CC BY-SA 4.0); VINs are decoded with the NHTSA vPIC service.</p>
       </div>
       <div class="card"><h4>Browser support</h4><ul id="caps" class="caps"></ul></div>
       <div class="card"><h4>App log</h4><pre id="log" class="log"></pre></div>

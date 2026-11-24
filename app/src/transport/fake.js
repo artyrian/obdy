@@ -1,4 +1,5 @@
 // Demo adapter: answers like the Mustang did in real journals (P0302 pending, cyl2 misfires).
+const FAKE_VIN = "1FA6P8TH0J5100000"; // made-up 2018 Mustang 2.3 VIN
 export class FakeTransport {
   constructor() {
     this.cb = () => {};
@@ -33,6 +34,22 @@ export class FakeTransport {
     }[pid];
   }
 
+  // Ford Mustang 2.3 manufacturer DIDs (OBDb/Ford-Mustang scalings); low-side pressure sags now and then (P008A-like)
+  _did(did) {
+    const n = (a) => (Math.random() * 2 - 1) * a;
+    const hex = (v, k) => (Math.round(v) & (16 ** k - 1)).toString(16).toUpperCase().padStart(k, "0");
+    const t = (Date.now() - this.t0) / 1000, on = !!this.rpm;
+    const sag = on && t % 45 > 38 ? 14 * Math.sin(((t % 45) - 38) / 7 * Math.PI) : 0;
+    const lpAct = on ? 62 + 1.5 * Math.sin(t * 0.8) - sag + n(0.6) : 55 * Math.exp(-t / 60);
+    const railKpa = on ? 3900 + 260 * Math.exp(-t / 30) : 700;
+    const acc = (cyl) => n(2) + (cyl === 2 && on && Math.random() < 0.04 ? -30 : 0); // cyl 2 stumbles
+    return {
+      "0548": hex(lpAct * 13.7892, 4), "041F": hex(on ? 65 / 0.435 : 0, 2), "03DC": hex((railKpa / 10) * 0.995, 4),
+      "0382": hex(acc(1), 2), "0388": hex(acc(2), 2), "038A": hex(acc(3), 2), "038B": hex(acc(4), 2),
+      "054D": hex((0.5 + lpAct / 150 * 4) * 1024, 4), "1279": "0235",
+    }[did];
+  }
+
   _answer(s) {
     if (s.startsWith("AT")) {
       if (s === "ATRV") return this.rpm ? "14.4V" : "12.3V";
@@ -59,7 +76,11 @@ export class FakeTransport {
       const h = (v) => v.toString(16).toUpperCase().padStart(4, "0");
       return `46${mid}0B24${h(cyc ? 1 : 0)}0000FFFF${mid}0C24${h(cyc)}0000FFFF`;
     }
-    if (s === "221279") return "6212790235";
+    if (s === "0902") return "490201" + [...FAKE_VIN].map((c) => c.charCodeAt(0).toString(16).toUpperCase()).join("");
+    if (s.startsWith("22") && s.length === 6) {
+      const d = this._did(s.slice(2));
+      return d ? "62" + s.slice(2) + d : "7F2231"; // requestOutOfRange, like a real PCM
+    }
     return "NO DATA";
   }
 
