@@ -61,3 +61,15 @@ test("app VERSION matches package.json", async () => {
   const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
   assert.equal(app.match(/const VERSION = "([^"]+)"/)[1], pkg.version);
 });
+
+test("BLE pickPair: known FFF0 pair over first-found", async () => {
+  const { pickPair } = await import("../src/transport/ble.js");
+  const B = (s) => `0000${s}-0000-1000-8000-00805f9b34fb`;
+  const c = (id, p) => ({ uuid: B(id), properties: p });
+  const chars = [c("fff4", { notify: true }), c("fff3", { write: true }), c("fff1", { notify: true }), c("fff2", { writeWithoutResponse: true })];
+  const p = pickPair("fff0", chars);
+  assert.equal(p.nt.uuid, B("fff1"));
+  assert.equal(p.wr.uuid, B("fff2"));
+  assert.equal(pickPair("abcd", chars).nt.uuid, B("fff4"));
+  assert.equal(pickPair("fff0", [c("fff1", { read: true })]), null);
+});

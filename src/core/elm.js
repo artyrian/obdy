@@ -43,7 +43,12 @@ export class Elm {
   }
 
   async init(log = () => {}) {
-    for (const [c, t] of INIT) await this.cmd(c, t || 2000);
+    for (const [c, t] of INIT) {
+      const r = await this.cmd(c, t || 2000);
+      if (c === "ATZ" && r === "TIMEOUT" && (await this.cmd("ATI", 2000)) === "TIMEOUT") {
+        throw new Error("adapter connected but doesn't answer ELM327 commands (no data on notify)");
+      }
+    }
     const ati = await this.cmd("ATI");
     const probe = await this.cmd("0100", 6000);
     log(`ELM ${ati} | 0100 -> ${probe}`);

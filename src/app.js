@@ -148,16 +148,22 @@ function showTile(c, v, unit) {
 
 // ---------------------------------------------------------------- connection
 async function connect(demo) {
+  if (st.connecting) return;
+  st.connecting = true;
+  $("connect").disabled = $("demo").disabled = true;
+  hideError();
+  const step = (m) => { $("status").textContent = m; log(m); };
   try {
-    const tr = demo ? new FakeTransport() : new BleTransport();
-    $("status").textContent = "connecting…";
-    await tr.connect();
+    const tr = demo ? new FakeTransport() : new BleTransport(log);
+    step(demo ? "starting demo…" : "choose the adapter…");
+    await tr.connect(); // BLE: requestDevice is its first await (needs this click)
     tr.onDisconnect = () => { log("adapter disconnected"); st.j?.w("CONN", { event: "lost" }); teardown(); };
     st.transport = tr;
     st.elm = new Elm(tr);
     st.j = new Journal(Journal.newId());
     await st.j.start({ app: VERSION, adapter: tr.name, demo: !!demo, ua: navigator.userAgent.slice(0, 120) });
     st.j.w("CONN", { event: "connected", name: tr.name, service: tr.service || "-" });
+    step("initialising ELM327…");
     const { ati, probe } = await st.elm.init(log);
     st.j.w("ELM", { ati, probe });
     if (!probe.startsWith("41")) log("⚠ ECU not responding — turn ignition on");
@@ -172,10 +178,26 @@ async function connect(demo) {
     buildTiles();
     pollLoop();
   } catch (e) {
-    log("connect failed: " + e.message);
+    const cancelled = e.name === "NotFoundError" && /cancel/i.test(e.message);
+    log(`connect failed: ${e.name}: ${e.message}`);
+    st.j?.w("CONN", { event: "failed", err: e.message });
+    try { await st.transport?.close(); } catch { /* ignore */ }
+    st.elm = st.transport = null;
     $("status").textContent = "not connected";
+    if (!cancelled) showError(`Connection failed: ${e.message}`);
+  } finally {
+    st.connecting = false;
+    $("connect").disabled = !bleAvailable();
+    $("demo").disabled = false;
   }
 }
+
+function showError(msg) {
+  const el = $("err");
+  el.querySelector(".msg").textContent = msg;
+  el.hidden = false;
+}
+function hideError() { $("err").hidden = true; }
 
 async function teardown() {
   st.polling = false;
@@ -537,6 +559,8 @@ function showTab(name) {
 }
 document.querySelectorAll(".tabs button").forEach((b) => { b.onclick = () => showTab(b.dataset.tab); });
 $("connect").onclick = () => connect(false);
+$("err-copy").onclick = () => copyText($("log").textContent).then(() => toast("log copied"));
+$("err-close").onclick = hideError;
 $("demo").onclick = () => connect(true);
 $("disconnect").onclick = () => teardown();
 $("rec").onclick = () => (st.recording ? stopRecording() : startRecording());

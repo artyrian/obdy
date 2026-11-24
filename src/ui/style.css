@@ -99,3 +99,6 @@ table.pids tr.off .chk span { color: var(--muted); }
 .tile .ref { font-size: 11px; color: var(--muted); min-height: 0; font-variant-numeric: tabular-nums; }
 .tile .ref:empty { display: none; }
 .tile .v.warn { color: var(--warn); } .tile .v.bad { color: var(--bad); }
+.banner.err { background: #fdecec; color: #7f1d1d; border-color: #f3b4b4; }
+@media (prefers-color-scheme: dark) { .banner.err { background: #2a1414; color: #fca5a5; border-color: #7f1d1d; } }
+.banner.err .msg { font-weight: 600; word-break: break-word; }
