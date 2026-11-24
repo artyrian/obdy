@@ -74,42 +74,42 @@ MISFIRE_MIDS = ((0xA1, "all cyl"), (0xA2, "cyl 1"), (0xA3, "cyl 2"), (0xA4, "cyl
 
 def _koeo(c):
     if not c.alive:
-        return 0, "ECU молчит — включите зажигание (кнопка Start без педали тормоза)", False
-    return c.t / 30, f"{c.t:.0f}/30 с", c.t >= 30
+        return 0, "ECU silent — turn ignition on (Start button, no brake)", False
+    return c.t / 30, f"{c.t:.0f}/30 s", c.t >= 30
 
 
 def _offon(c):
     if not c.alive:
         c.acc["off"] = True
-        return 0.4, "зажигание выключено — подождите 10 с и включите снова", False
+        return 0.4, "ignition off — wait 10 s, then turn it back on", False
     if not c.acc.get("off"):
-        return 0.1, "выключите зажигание…", False
+        return 0.1, "turn ignition off…", False
     c.acc.setdefault("on_t", c.t)
     left = c.t - c.acc["on_t"]
-    return 0.5 + left / 30, f"снова включено, пишем подкачку {left:.0f}/15 с", left >= 15
+    return 0.5 + left / 30, f"back on, logging fuel prime {left:.0f}/15 s", left >= 15
 
 
 def _start(c):
     if c.rpm and c.rpm > 400:
         c.acc["run"] = c.acc.get("run", 0) + c.dt
     run = c.acc.get("run", 0)
-    msg = "заводите…" if not run else f"работает {run:.0f}/90 с, {c.rpm or 0:.0f} об/мин"
+    msg = "start the engine…" if not run else f"running {run:.0f}/90 s, {c.rpm or 0:.0f} rpm"
     return run / 90, msg, run >= 90
 
 
 def _warm(c):
     if c.ect is None:
-        return 0, "нет данных температуры", False
+        return 0, "no coolant temp data", False
     e0 = c.acc.setdefault("ect0", c.ect)
     p = 1 if c.ect >= 80 else (c.ect - e0) / max(1, 80 - e0)
-    return p, f"охлаждающая {c.ect:.0f} °C → 80 °C (можно Next, если долго)", c.ect >= 80
+    return p, f"coolant {c.ect:.0f} °C → 80 °C (Next if it takes too long)", c.ect >= 80
 
 
 def _hold(c):
     if c.rpm and 2200 < c.rpm < 2800:
         c.acc["hold"] = c.acc.get("hold", 0) + c.dt
     h = c.acc.get("hold", 0)
-    return h / 30, f"{c.rpm or 0:.0f} об/мин, в коридоре 2200–2800: {h:.0f}/30 с", h >= 30
+    return h / 30, f"{c.rpm or 0:.0f} rpm, in 2200–2800 band: {h:.0f}/30 s", h >= 30
 
 
 def _snap(c):
@@ -120,43 +120,43 @@ def _snap(c):
     if c.rpm and c.rpm < 2000:
         c.acc["hi"] = False
     c.acc["peak"] = max(c.acc.get("peak", 0), c.rpm or 0)
-    return n / 3, f"перегазовок {n}/3, пик {c.acc['peak']:.0f} об/мин", n >= 3
+    return n / 3, f"snaps {n}/3, peak {c.acc['peak']:.0f} rpm", n >= 3
 
 
 def _idle(c):
     if c.rpm and 400 < c.rpm < 1200 and not c.spd:
         c.acc["idle"] = c.acc.get("idle", 0) + c.dt
     i = c.acc.get("idle", 0)
-    return i / 60, f"холостые {i:.0f}/60 с, {c.rpm or 0:.0f} об/мин", i >= 60
+    return i / 60, f"idle {i:.0f}/60 s, {c.rpm or 0:.0f} rpm", i >= 60
 
 
 def _drive(c):
     c.acc["vmax"] = max(c.acc.get("vmax", 0), c.spd or 0)
     c.acc["rmax"] = max(c.acc.get("rmax", 0), c.rpm or 0)
-    return min(1, c.t / 600), (f"{c.t / 60:.1f} мин, макс {c.acc['vmax'] * 0.621:.0f} mph, "
-                               f"{c.acc['rmax']:.0f} об/мин — Next, когда вернётесь"), False
+    return min(1, c.t / 600), (f"{c.t / 60:.1f} min, max {c.acc['vmax'] * 0.621:.0f} mph, "
+                               f"{c.acc['rmax']:.0f} rpm — Next when back"), False
 
 
 # (id, title, instructions, check, fast sampling)
 STEPS = [
-    ("koeo", "1/8  Зажигание ON, двигатель НЕ заводить",
-     "Насос подкачивает топливо. Пишем давление в рампе, кандидатов DID и напряжение. 30 с.",
+    ("koeo", "1/8  Ignition ON, do NOT start",
+     "Fuel pump primes. Logging rail pressure, DID candidates and voltage. 30 s.",
      _koeo, False),
-    ("offon", "2/8  Выкл → 10 с → Вкл зажигание",
-     "Повторная подкачка: смотрим, как растёт давление с нуля. Не заводить.", _offon, True),
-    ("start", "3/8  Завести, педаль не трогать",
-     "Холодный пуск + 90 с холостых. Слушайте троение; смотрите выхлоп.", _start, False),
-    ("warm", "4/8  Холостые до прогрева",
-     "Ждём ~80 °C. В это время: бачок антифриза (пузыри, уровень), течи под машиной.", _warm, False),
-    ("hold", "5/8  Держать ~2500 об/мин 30 с",
-     "Ровно держите педаль. Смотрим давление и коррекции под постоянной нагрузкой.", _hold, False),
-    ("snap", "6/8  3 резкие перегазовки до ~4000",
-     "Нажать резко → отпустить, 3 раза с паузой. Быстрый опрос: ловим провалы давления.", _snap, True),
-    ("idle", "7/8  Холостые 60 с",
-     "Педаль не трогать. Сравним с холодными холостыми. Не глушить до «Готово».", _idle, False),
-    ("drive", "8/8  (по желанию) Поездка 10–15 мин",
-     "Обычная езда + 2–3 разгона до 4000 (нагрузка — тут ловится P008A). "
-     "Next — когда вернётесь, двигатель НЕ глушить до «Готово».",
+    ("offon", "2/8  Ignition off → 10 s → on",
+     "Second prime: watch pressure build from zero. Don't start.", _offon, True),
+    ("start", "3/8  Start, hands off the pedal",
+     "Cold start + 90 s idle. Listen for misfire, watch the exhaust.", _start, False),
+    ("warm", "4/8  Idle until warm",
+     "Wait for ~80 °C. Meanwhile: coolant tank (bubbles, level), leaks under the car.", _warm, False),
+    ("hold", "5/8  Hold ~2500 rpm for 30 s",
+     "Steady pedal. Watching pressure and trims under constant load.", _hold, False),
+    ("snap", "6/8  3 quick snaps to ~4000",
+     "Snap → release, 3 times with pauses. Fast polling catches pressure dips.", _snap, True),
+    ("idle", "7/8  Idle 60 s",
+     "Hands off. Compared with cold idle. Keep running until \"Done\".", _idle, False),
+    ("drive", "8/8  (optional) Drive 10–15 min",
+     "Normal driving + 2–3 pulls to 4000 (load — this is where P008A shows). "
+     "Next when back; keep the engine running until \"Done\".",
      _drive, True),
 ]
 
@@ -603,9 +603,9 @@ class OBDApp(App):
                     yield Button("Fast: OFF", id="g-fast")
                     yield Button("Next ▶", id="g-next", variant="primary")
                     yield Button("Stop", id="g-stop", variant="error")
-                yield Label("Пошаговая диагностика", id="g-title")
-                yield Label("Подключитесь к адаптеру и нажмите Start session. Ворота гаража откройте. "
-                            "Всё пишется в один журнал obd_logs/<время>.log.", id="g-text")
+                yield Label("Guided diagnostics", id="g-title")
+                yield Label("Connect the adapter and press Start session. Open the garage door. "
+                            "Everything goes to one log: obd_logs/<time>.log.", id="g-text")
                 yield ProgressBar(id="g-prog", total=100, show_eta=False)
                 yield Label("", id="g-status")
                 yield Label("", id="g-live")
@@ -900,8 +900,8 @@ class OBDApp(App):
         J = self.j
         J.w("STEP", sess=sess, id="begin", event="start")
         J.keys(full)
-        title.update("0/8  Снимок до теста")
-        text.update("Читаю ошибки, freeze frame и счётчики пропусков…")
+        title.update("0/8  Pre-test snapshot")
+        text.update("Reading DTCs, freeze frame and misfire counters…")
         self.log_line(f"=== GUIDED {sess} -> {J.path} ===")
         before_dtc = await self.read_dtcs(tag="before")
         before_mis = await self.read_misfires(tag="before")
@@ -992,8 +992,8 @@ class OBDApp(App):
                     break
                 if not is_fast:
                     await asyncio.sleep(0.1)
-        title.update("Снимок после теста — НЕ глушите двигатель")
-        text.update("Читаю ошибки и счётчики пропусков ещё раз…")
+        title.update("Post-test snapshot — keep the engine running")
+        text.update("Reading DTCs and misfire counters again…")
         alive = self.elm and data_bytes(await self.elm.cmd("010C", 2), "410C") is not None
         if not alive:
             J.w("RESULT", sess=sess, what="after_snapshot", status="skipped_ecu_off")
@@ -1016,8 +1016,8 @@ class OBDApp(App):
         for line in an.summary():
             J.w("RESULT", sess=sess, what="anomalies", summary=line)
         J.w("STEP", sess=sess, id="end", event="done")
-        title.update("Готово ✔")
-        text.update(f"Журнал: {J.path}\nСессия: {sess}. Пришлите файл журнала для разбора.")
+        title.update("Done ✔")
+        text.update(f"Log: {J.path}\nSession: {sess}. Send the log file for review.")
         self.guiding = False
         self.log_line(f"=== GUIDED {sess} DONE ===")
 

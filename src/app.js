@@ -9,9 +9,9 @@ const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
 // live set: key params, ~8–11 cmds -> ~1 sample/s over BLE
 const LIVE = ["010C", "0105", "0123", "0106", "0107", "0134", "0144", "0104", "0111", "010D", "0142"];
-const TILE_LABEL = { "010C": "Обороты", "0105": "Охлаждающая", "0123": "Давление в рампе", "0106": "STFT",
-  "0107": "LTFT", "0134": "Лямбда", "0144": "Лямбда заданная", "0104": "Нагрузка", "0111": "Дроссель",
-  "010D": "Скорость", "0142": "Напряжение" };
+const TILE_LABEL = { "010C": "RPM", "0105": "Coolant", "0123": "Fuel rail", "0106": "STFT",
+  "0107": "LTFT", "0134": "Lambda", "0144": "Lambda cmd", "0104": "Load", "0111": "Throttle",
+  "010D": "Speed", "0142": "Voltage" };
 // write an extra S line when one of these moved by at least this much
 const DEADBAND = { "010C": 50, "0123": 300, "0106": 2, "0134": 0.02, "0144": 0.02, "0111": 2, "0104": 5, "010D": 3 };
 const DTC_POLL_MS = 20000;
@@ -30,11 +30,11 @@ function caps() {
   const f = typeof File !== "undefined" ? new File(["x"], "x.log", { type: "text/plain" }) : null;
   return {
     "Web Bluetooth": bleAvailable(),
-    "Поделиться файлом": !!(navigator.canShare && f && navigator.canShare({ files: [f] })),
-    "Поделиться текстом": !!navigator.share,
-    "Буфер обмена": !!navigator.clipboard?.writeText,
-    "Не гасить экран (Wake Lock)": "wakeLock" in navigator,
-    "Хранилище (IndexedDB)": typeof indexedDB !== "undefined",
+    "Share file": !!(navigator.canShare && f && navigator.canShare({ files: [f] })),
+    "Share text": !!navigator.share,
+    "Clipboard": !!navigator.clipboard?.writeText,
+    "Keep screen on (Wake Lock)": "wakeLock" in navigator,
+    "Storage (IndexedDB)": typeof indexedDB !== "undefined",
     "HTTPS / localhost": window.isSecureContext,
   };
 }
@@ -43,17 +43,17 @@ function showBanner() {
   const b = $("banner");
   if (bleAvailable()) return;
   if (isIOS) {
-    b.innerHTML = `<b>Нужен браузер Bluefy.</b> Safari и Chrome на iPhone не умеют работать с Bluetooth-адаптером.
-      <div class="bar"><a href="${BLUEFY_URL}" target="_blank" rel="noopener"><button class="primary">Скачать Bluefy в App Store</button></a>
-      <button id="copy-url">Скопировать ссылку на эту страницу</button></div>
-      <div class="small">Установите Bluefy, откройте в нём эту страницу. Демо-режим работает и здесь.</div>`;
-    $("copy-url").onclick = () => copyText(location.href).then(() => toast("Ссылка скопирована"));
+    b.innerHTML = `<b>Bluefy browser required.</b> Safari and Chrome on iPhone can't talk to Bluetooth adapters.
+      <div class="bar"><a href="${BLUEFY_URL}" target="_blank" rel="noopener"><button class="primary">Get Bluefy on the App Store</button></a>
+      <button id="copy-url">Copy link to this page</button></div>
+      <div class="small">Install Bluefy and open this page there. Demo works here too.</div>`;
+    $("copy-url").onclick = () => copyText(location.href).then(() => toast("Link copied"));
   } else if (isAndroid) {
-    b.innerHTML = `<b>Откройте страницу в Chrome.</b> Этот браузер не поддерживает Bluetooth-адаптеры.`;
+    b.innerHTML = `<b>Open in Chrome.</b> This browser doesn't support Bluetooth adapters.`;
   } else if (!window.isSecureContext) {
-    b.innerHTML = `<b>Нужен HTTPS или localhost</b> — иначе браузер не даст доступ к Bluetooth.`;
+    b.innerHTML = `<b>HTTPS or localhost required</b> for Bluetooth access.`;
   } else {
-    b.innerHTML = `<b>Откройте в Chrome или Edge.</b> Этот браузер не поддерживает Web Bluetooth.`;
+    b.innerHTML = `<b>Open in Chrome or Edge.</b> This browser doesn't support Web Bluetooth.`;
   }
   b.hidden = false;
   $("connect").disabled = true;
@@ -69,7 +69,7 @@ function log(msg) {
 function toast(msg) { log(msg); $("status").textContent = msg; setTimeout(updateStatus, 2500); }
 
 function updateStatus() {
-  $("status").textContent = st.elm ? `● ${st.transport.name}${st.recording ? " · запись" : ""}` : "не подключено";
+  $("status").textContent = st.elm ? `● ${st.transport.name}${st.recording ? " · recording" : ""}` : "not connected";
 }
 
 function setConnected(on) {
@@ -108,9 +108,9 @@ function showTile(c, v, unit) {
 async function connect(demo) {
   try {
     const tr = demo ? new FakeTransport() : new BleTransport();
-    $("status").textContent = "подключение…";
+    $("status").textContent = "connecting…";
     await tr.connect();
-    tr.onDisconnect = () => { log("адаптер отключился"); st.j?.w("CONN", { event: "lost" }); teardown(); };
+    tr.onDisconnect = () => { log("adapter disconnected"); st.j?.w("CONN", { event: "lost" }); teardown(); };
     st.transport = tr;
     st.elm = new Elm(tr);
     st.j = new Journal(Journal.newId());
@@ -118,14 +118,14 @@ async function connect(demo) {
     st.j.w("CONN", { event: "connected", name: tr.name, service: tr.service || "-" });
     const { ati, probe } = await st.elm.init(log);
     st.j.w("ELM", { ati, probe });
-    if (!probe.startsWith("41")) log("⚠ блок управления не отвечает — включите зажигание");
+    if (!probe.startsWith("41")) log("⚠ ECU not responding — turn ignition on");
     setConnected(true);
     buildTiles();
     st.minmax = {};
     pollLoop();
   } catch (e) {
-    log("ошибка подключения: " + e.message);
-    $("status").textContent = "не подключено";
+    log("connect failed: " + e.message);
+    $("status").textContent = "not connected";
   }
 }
 
@@ -164,7 +164,7 @@ async function pollLoop() {
     const now = Date.now();
     const dt = (performance.now() - tRate) / 1000;
     if (dt > 2) {
-      $("rate").textContent = `${(n / dt).toFixed(1)} команд/с · ${st.elm.rate.toFixed(0)} мс/команда`;
+      $("rate").textContent = `${(n / dt).toFixed(1)} cmd/s · ${st.elm.rate.toFixed(0)} ms/cmd`;
       n = 0; tRate = performance.now();
     }
     if (st.recording) {
@@ -184,17 +184,17 @@ async function pollBattery(rpm) {
   if (v == null) return;
   const running = rpm > 400;
   let cls = "", state;
-  if (running) { state = v >= 13.2 ? "заряжается" : "не заряжается?"; cls = v >= 13.2 ? "" : "warn"; }
+  if (running) { state = v >= 13.2 ? "charging" : "not charging?"; cls = v >= 13.2 ? "" : "warn"; }
   else {
-    state = "двигатель заглушен";
-    if (v < 12.0) { cls = "bad"; state = "низкое — заведите или выключите зажигание"; }
+    state = "engine off";
+    if (v < 12.0) { cls = "bad"; state = "low — start engine or turn ignition off"; }
     else if (v < 12.3) cls = "warn";
   }
-  $("batt").textContent = `🔋 ${v.toFixed(1)} В`;
+  $("batt").textContent = `🔋 ${v.toFixed(1)} V`;
   $("batt").className = "pill " + cls;
   $("batt").title = state;
   st.j?.w("BATT", { v, rpm: rpm ?? 0, state });
-  if (cls === "bad") log(`⚠ аккумулятор ${v.toFixed(2)} В — ${state}`);
+  if (cls === "bad") log(`⚠ battery ${v.toFixed(2)} V — ${state}`);
 }
 
 async function pollDtcMisfires(vals) {
@@ -206,7 +206,7 @@ async function pollDtcMisfires(vals) {
       st.j.w("MISFIRE", { tag: "live", sess: st.sess, cyl, cycle: m.cycle, rpm, ect: vals["0105"] ?? "" });
       if (m.cycle > (st.misLive[cyl] ?? 0)) {
         st.j.w("ANOM", { rule: `misfire_${cyl}`, msg: `misfires ${cyl}: ${st.misLive[cyl] ?? 0}->${m.cycle}` });
-        log(`⚠ пропуски ${cyl}: ${m.cycle}`);
+        log(`⚠ misfires ${cyl}: ${m.cycle}`);
       }
       st.misLive[cyl] = m.cycle;
     }
@@ -216,7 +216,7 @@ async function pollDtcMisfires(vals) {
       if (st.dtcSeen.has(code)) continue;
       st.dtcSeen.add(code);
       st.j.w("DTC_NEW", { sess: st.sess, type, code, rpm: rpm ?? 0, ect: vals["0105"] ?? "" });
-      log(`⚠ новая ошибка ${code} (${type})`);
+      log(`⚠ new DTC ${code} (${type})`);
       const ff = await st.elm.freezeFrame();
       if (ff) st.j.w("FF", { sess: st.sess, ...ff });
     }
@@ -234,21 +234,21 @@ async function startRecording() {
   st.dtcSeen = new Set(Object.values(d).flatMap((x) => x.codes));
   for (const [type, x] of Object.entries(d)) st.j.w("DTC", { tag: "before", type, codes: x.codes.join(",") || "-", raw: x.raw });
   st.recording = true;
-  $("rec").classList.add("on"); $("rec").textContent = "■ Стоп";
+  $("rec").classList.add("on"); $("rec").textContent = "■ Stop";
   await wakeLock(true);
   updateStatus();
-  log(`запись ${st.sess}`);
+  log(`recording ${st.sess}`);
 }
 
 async function stopRecording() {
   if (!st.recording) return;
   st.recording = false;
-  $("rec").classList.remove("on"); $("rec").textContent = "● Запись";
+  $("rec").classList.remove("on"); $("rec").textContent = "● Record";
   st.j.w("STEP", { sess: st.sess, id: "record", event: "stop", t: ((Date.now() - st.t0) / 1000).toFixed(1) });
   await wakeLock(false);
   await st.j.flush();
   updateStatus();
-  log(`запись ${st.sess} остановлена`);
+  log(`recording ${st.sess} stopped`);
 }
 
 async function wakeLock(on) {
@@ -268,20 +268,20 @@ document.addEventListener("visibilitychange", async () => {
 // ---------------------------------------------------------------- diagnostics tab
 async function readDiag() {
   const out = $("diag-out");
-  out.textContent = "читаю…";
+  out.textContent = "reading…";
   const d = await st.elm.dtcs();
   const mis = await st.elm.misfires();
   const ff = await st.elm.freezeFrame();
   for (const [type, x] of Object.entries(d)) st.j.w("DTC", { tag: "read", type, codes: x.codes.join(",") || "-", raw: x.raw });
   for (const [cyl, m] of Object.entries(mis)) st.j.w("MISFIRE", { tag: "read", cyl, cycle: m.cycle ?? "", avg10: m.avg10 ?? "" });
   if (ff) st.j.w("FF", ff);
-  const names = { stored: "Сохранённые", pending: "Ожидающие (pending)", permanent: "Постоянные (permanent)" };
-  let h = `<div class="card"><h4>Ошибки</h4><table>`;
+  const names = { stored: "Stored", pending: "Pending", permanent: "Permanent" };
+  let h = `<div class="card"><h4>DTCs</h4><table>`;
   for (const [type, x] of Object.entries(d)) {
-    h += `<tr><td>${names[type]}</td><td class="code ${x.codes.length ? "bad" : "ok"}">${x.codes.join(", ") || "нет"}</td></tr>`;
+    h += `<tr><td>${names[type]}</td><td class="code ${x.codes.length ? "bad" : "ok"}">${x.codes.join(", ") || "none"}</td></tr>`;
   }
-  h += `</table></div><div class="card"><h4>Пропуски по цилиндрам</h4>
-    <table><tr><th></th><th>этот/прошлый цикл</th><th>среднее за 10</th></tr>`;
+  h += `</table></div><div class="card"><h4>Misfires by cylinder</h4>
+    <table><tr><th></th><th>this/last cycle</th><th>avg of 10</th></tr>`;
   for (const [cyl, m] of Object.entries(mis)) {
     if (cyl === "all" && m.cycle == null) continue;
     const bad = (m.cycle ?? 0) > 0 || (m.avg10 ?? 0) > 0;
@@ -315,7 +315,7 @@ async function exportLog(id, how) {
       const file = new File([text], name, { type: "text/plain" });
       if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: name });
       else if (navigator.share) await navigator.share({ title: name, text });
-      else throw new Error("Поделиться не поддерживается — используйте Скачать или Копировать");
+      else throw new Error("Share not supported — use Download or Copy");
     } else if (how === "download") {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
@@ -323,32 +323,32 @@ async function exportLog(id, how) {
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     } else if (how === "copy") {
       await copyText(text);
-      toast(`скопировано ${text.split("\n").length - 1} строк`);
+      toast(`copied ${text.split("\n").length - 1} lines`);
     }
   } catch (e) {
-    if (e.name !== "AbortError") log(`экспорт (${how}): ${e.message}`);
+    if (e.name !== "AbortError") log(`export (${how}): ${e.message}`);
   }
 }
 
 async function renderLogs() {
   const el = $("logs");
   const sessions = await listSessions().catch(() => []);
-  if (!sessions.length) { el.innerHTML = `<p class="muted">Журналов пока нет — подключитесь к адаптеру.</p>`; return; }
+  if (!sessions.length) { el.innerHTML = `<p class="muted">No logs yet — connect an adapter.</p>`; return; }
   el.innerHTML = "";
   for (const s of sessions) {
     const row = document.createElement("div");
     row.className = "card logrow";
     const d = new Date(s.started);
     row.innerHTML = `<div><b></b><div class="muted small"></div></div>
-      <div class="bar"><button data-a="share">Поделиться</button><button data-a="download">Скачать</button>
-      <button data-a="copy">Копировать</button><button data-a="del">✕</button></div>`;
+      <div class="bar"><button data-a="share">Share</button><button data-a="download">Download</button>
+      <button data-a="copy">Copy</button><button data-a="del">✕</button></div>`;
     row.querySelector("b").textContent = d.toLocaleString();
-    row.querySelector(".small").textContent = `${s.adapter || ""}${s.demo ? " · демо" : ""} · ${s.id}`;
+    row.querySelector(".small").textContent = `${s.adapter || ""}${s.demo ? " · demo" : ""} · ${s.id}`;
     row.querySelectorAll("button").forEach((b) => {
       b.onclick = async () => {
         if (b.dataset.a === "del") {
-          if (st.j?.id === s.id) return toast("текущий журнал удалить нельзя");
-          if (confirm("Удалить журнал?")) { await deleteSession(s.id); renderLogs(); }
+          if (st.j?.id === s.id) return toast("can't delete the active log");
+          if (confirm("Delete log?")) { await deleteSession(s.id); renderLogs(); }
         } else exportLog(s.id, b.dataset.a);
       };
     });
@@ -381,7 +381,7 @@ $("connect").onclick = () => connect(false);
 $("demo").onclick = () => connect(true);
 $("disconnect").onclick = () => teardown();
 $("rec").onclick = () => (st.recording ? stopRecording() : startRecording());
-$("read-diag").onclick = () => readDiag().catch((e) => log("ошибка: " + e.message));
+$("read-diag").onclick = () => readDiag().catch((e) => log("error: " + e.message));
 $("ver").textContent = VERSION;
 
 showBanner();

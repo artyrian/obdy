@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -13,37 +13,37 @@
 <body>
   <header>
     <div class="title">obdy <span id="ver" class="muted"></span></div>
-    <div class="status"><span id="status">не подключено</span> <span id="batt" class="pill">🔋 —</span></div>
+    <div class="status"><span id="status">not connected</span> <span id="batt" class="pill">🔋 —</span></div>
   </header>
 
   <div id="banner" class="banner" hidden></div>
 
   <section class="bar">
-    <button id="connect" class="primary">Подключить адаптер</button>
-    <button id="demo">Демо</button>
-    <button id="disconnect" hidden>Отключить</button>
+    <button id="connect" class="primary">Connect adapter</button>
+    <button id="demo">Demo</button>
+    <button id="disconnect" hidden>Disconnect</button>
   </section>
 
   <nav class="tabs">
     <button data-tab="live" class="on">Live</button>
-    <button data-tab="diag">Ошибки</button>
-    <button data-tab="logs">Журналы</button>
-    <button data-tab="info">Инфо</button>
+    <button data-tab="diag">DTCs</button>
+    <button data-tab="logs">Logs</button>
+    <button data-tab="info">Info</button>
   </nav>
 
   <main>
     <section id="tab-live" class="tab">
       <div class="bar">
-        <button id="rec" class="rec" disabled>● Запись</button>
+        <button id="rec" class="rec" disabled>● Record</button>
         <span id="rate" class="muted"></span>
       </div>
       <div id="tiles" class="tiles"></div>
-      <p class="muted small">Запись: замеры ~1/с (чаще при изменениях), ошибки и пропуски каждые 20 с.
-        Всё сохраняется в журнал на телефоне сразу.</p>
+      <p class="muted small">Recording: ~1 sample/s (more on change), DTCs and misfires every 20 s.
+        Saved to the on-device log immediately.</p>
     </section>
 
     <section id="tab-diag" class="tab" hidden>
-      <div class="bar"><button id="read-diag" disabled>Прочитать ошибки и пропуски</button></div>
+      <div class="bar"><button id="read-diag" disabled>Read DTCs and misfires</button></div>
       <div id="diag-out"></div>
     </section>
 
@@ -52,9 +52,9 @@
     </section>
 
     <section id="tab-info" class="tab" hidden>
-      <h3>Возможности браузера</h3>
+      <h3>Browser support</h3>
       <ul id="caps" class="caps"></ul>
-      <h3>Лог</h3>
+      <h3>Log</h3>
       <pre id="log" class="log"></pre>
     </section>
   </main>
