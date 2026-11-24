@@ -25,6 +25,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mkdir _site && cp -r index.html src favicon.ico favicon.svg apple-touch-icon.png _site/
+      # cache-busting: browsers/Pages CDN keep old CSS/JS for a while, which mixes versions after a deploy
+      - name: Version asset URLs
+        run: |
+          v=${GITHUB_SHA::8}
+          sed -i -E "s#(src/ui/style\.css|src/app\.js)\"#\1?v=$v\"#g" _site/index.html
+          find _site/src -name '*.js' -exec sed -i -E "s#(from \"\.{1,2}/[^\"]+\.js)\"#\1?v=$v\"#g" {} +
+          grep -c "?v=$v" _site/index.html
+          grep -rho "?v=$v" _site/src | wc -l
       - uses: actions/upload-pages-artifact@v3
   # separate job: deploying in the same job as the upload sometimes can't see the artifact yet
   deploy:
