@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111418">
+  <title>OBD Scanner</title>
+  <link rel="stylesheet" href="src/ui/style.css">
+</head>
+<body>
+  <header>
+    <div class="title">OBD Scanner <span id="ver" class="muted"></span></div>
+    <div class="status"><span id="status">не подключено</span> <span id="batt" class="pill">🔋 —</span></div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <section class="bar">
+    <button id="connect" class="primary">Подключить адаптер</button>
+    <button id="demo">Демо</button>
+    <button id="disconnect" hidden>Отключить</button>
+  </section>
+
+  <nav class="tabs">
+    <button data-tab="live" class="on">Live</button>
+    <button data-tab="diag">Ошибки</button>
+    <button data-tab="logs">Журналы</button>
+    <button data-tab="info">Инфо</button>
+  </nav>
+
+  <main>
+    <section id="tab-live" class="tab">
+      <div class="bar">
+        <button id="rec" class="rec" disabled>● Запись</button>
+        <span id="rate" class="muted"></span>
+      </div>
+      <div id="tiles" class="tiles"></div>
+      <p class="muted small">Запись: замеры ~1/с (чаще при изменениях), ошибки и пропуски каждые 20 с.
+        Всё сохраняется в журнал на телефоне сразу.</p>
+    </section>
+
+    <section id="tab-diag" class="tab" hidden>
+      <div class="bar"><button id="read-diag" disabled>Прочитать ошибки и пропуски</button></div>
+      <div id="diag-out"></div>
+    </section>
+
+    <section id="tab-logs" class="tab" hidden>
+      <div id="logs"></div>
+    </section>
+
+    <section id="tab-info" class="tab" hidden>
+      <h3>Возможности браузера</h3>
+      <ul id="caps" class="caps"></ul>
+      <h3>Лог</h3>
+      <pre id="log" class="log"></pre>
+    </section>
+  </main>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
