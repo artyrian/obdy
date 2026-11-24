@@ -3,6 +3,8 @@
 OBD-II сканер в браузере для BLE-адаптеров ELM327 (проверен под UniCarScan UCSI-2100), Ford Mustang 2.3 EcoBoost.
 Только клиент: статика, без сервера и сборки.
 
+**▶ https://artyrian.github.io/obdy/**
+
 - **iPhone:** браузер [Bluefy](https://apps.apple.com/app/id1492822055) (Safari/Chrome на iOS не умеют Web Bluetooth).
 - **Mac/Windows/Android:** Chrome или Edge.
 
