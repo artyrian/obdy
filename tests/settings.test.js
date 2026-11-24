@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as S from "../src/core/settings.js";
-import { Series, yRange } from "../src/ui/chart.js";
+import { Series, yRange, rateLabel } from "../src/ui/chart.js";
 
 test("defaults: RPM first and on", () => {
   const d = S.defaults();
@@ -65,4 +65,13 @@ test("Series trims by time and cap, skips nulls", () => {
 test("yRange pads flat lines", () => {
   const [lo, hi] = yRange([14, 14, 14]);
   assert.ok(lo < 14 && hi > 14);
+});
+
+test("rateLabel: Hz for fast, period for slow, empty when stale", () => {
+  const fast = Array.from({ length: 21 }, (_, i) => 100000 + i * 400); // 2.5 Hz
+  assert.equal(rateLabel(fast, 108000), "2.5 Hz");
+  const slow = [100000, 105000, 110000, 115000]; // every 5 s
+  assert.equal(rateLabel(slow, 115500), "5.0 s");
+  assert.equal(rateLabel([100000], 100500), "");
+  assert.equal(rateLabel(slow, 300000), "");
 });

@@ -98,3 +98,14 @@ export function draw(canvas, s, { now, windowMs: windowMs0, big = false, gapMs =
     for (let i = 0; i < v.length; i++) { g.beginPath(); g.arc(X(t[i]), Y(v[i]), big ? 2.2 : 1.4, 0, 7); g.fill(); }
   }
 }
+
+/** Actual poll rate from the last minute of samples: "2.4 Hz" or "5 s" (period). */
+export function rateLabel(t, now) {
+  let i = t.length - 1;
+  while (i > 0 && now - t[i - 1] <= 60000) i--;
+  const n = t.length - 1 - i;
+  if (n < 1 || now - t.at(-1) > 60000) return "";
+  const hz = (n * 1000) / (t.at(-1) - t[i]);
+  if (!Number.isFinite(hz)) return "";
+  return hz >= 0.95 ? `${hz.toFixed(hz >= 10 ? 0 : 1)} Hz` : `${(1 / hz).toFixed(1 / hz >= 10 ? 0 : 1)} s`;
+}

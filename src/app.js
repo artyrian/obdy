@@ -4,7 +4,7 @@ import { Journal, listSessions, sessionText, deleteSession } from "./core/journa
 import { BleTransport, bleAvailable } from "./transport/ble.js";
 import { FakeTransport } from "./transport/fake.js";
 import * as settings from "./core/settings.js";
-import { Series, draw } from "./ui/chart.js";
+import { Series, draw, rateLabel } from "./ui/chart.js";
 
 const VERSION = "0.1.0-alpha"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
@@ -89,16 +89,34 @@ const labelOf = (c) => settings.LABEL[c] || c;
 const isSupported = (c) => c === "010C" || !st.supported || st.supported.has(parseInt(c.slice(2), 16));
 
 function buildTiles() {
+  const open = st.open;
   $("tiles").innerHTML = "";
   for (const c of settings.enabled(st.cfg)) {
     const d = document.createElement("div");
     d.className = "tile"; d.id = "t" + c;
-    d.innerHTML = `<div class="k"></div><div><span class="v">—</span><span class="u"></span></div>
+    d.tabIndex = 0; d.setAttribute("role", "button"); d.setAttribute("aria-expanded", "false");
+    d.innerHTML = `<div class="t-head"><span class="k"></span><span class="hz" title="actual poll rate"></span></div>
+      <div class="t-val"><span class="v">—</span><span class="u"></span></div>
       <canvas class="spark" aria-hidden="true"></canvas><div class="mm"></div>`;
     d.querySelector(".k").textContent = labelOf(c);
-    d.onclick = () => openChart(c);
+    d.onclick = () => toggleTile(c);
+    d.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTile(c); } };
     $("tiles").append(d);
+    if (st.latest[c] != null) showTile(c, st.latest[c], unitOf(c));
   }
+  if (open) toggleTile(open, true);
+}
+
+function toggleTile(c, force) {
+  const t = $("t" + c);
+  if (!t) { st.open = null; return; }
+  const big = force ?? !t.classList.contains("big");
+  $("tiles").querySelectorAll(".tile.big").forEach((x) => { x.classList.remove("big"); x.setAttribute("aria-expanded", "false"); });
+  t.classList.toggle("big", big);
+  t.setAttribute("aria-expanded", String(big));
+  st.open = big ? c : null;
+  drawCharts();
+  if (big) t.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function showTile(c, v, unit) {
@@ -110,7 +128,7 @@ function showTile(c, v, unit) {
   if (!t) return;
   t.querySelector(".v").textContent = fmtDisp(dispVal(v, unit), unit);
   t.querySelector(".u").textContent = v == null ? "" : dispUnit(unit);
-  if (st.minmax[c]) {
+  if (st.minmax[c] && !t.classList.contains("big")) {
     const f = (x) => fmtDisp(dispVal(x, unit), unit);
     t.querySelector(".mm").textContent = `min ${f(st.minmax[c][0])} · max ${f(st.minmax[c][1])}`;
   }
@@ -399,58 +417,20 @@ const seriesOf = (c) => st.series[c] ?? (st.series[c] = new Series());
 const visible = (tab) => !$("tab-" + tab).hidden && document.visibilityState === "visible";
 const gapOf = (c) => Math.max(10000, 3 * (st.cfg.pids[c]?.every || 0));
 
-function buildCharts() {
-  const el = $("charts");
-  const open = el.querySelector(".chart.big")?.dataset.c;
-  el.innerHTML = "";
-  for (const c of settings.enabled(st.cfg)) {
-    const d = document.createElement("button");
-    d.className = "chart"; d.dataset.c = c; d.type = "button";
-    d.setAttribute("aria-expanded", "false");
-    d.innerHTML = `<div class="ch-head"><span class="k"></span><span class="cv"></span></div>
-      <canvas></canvas><div class="ch-foot muted small"></div>`;
-    d.querySelector(".k").textContent = labelOf(c);
-    d.onclick = () => toggleChart(d);
-    el.append(d);
-    if (c === open) toggleChart(d, true);
-  }
-  drawCharts();
-}
-
-function toggleChart(card, force) {
-  const big = force ?? !card.classList.contains("big");
-  $("charts").querySelectorAll(".chart.big").forEach((x) => { x.classList.remove("big"); x.setAttribute("aria-expanded", "false"); });
-  card.classList.toggle("big", big);
-  card.setAttribute("aria-expanded", String(big));
-  if (big) card.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  drawCharts();
-}
-
-function openChart(c) {
-  showTab("charts");
-  const card = $("charts").querySelector(`.chart[data-c="${c}"]`);
-  if (card) toggleChart(card, true);
-}
-
 function drawCharts() {
+  if (!visible("live")) return;
   const now = Date.now(), windowMs = st.cfg.window * 60000;
-  if (visible("live")) {
-    for (const cv of $("tiles").querySelectorAll("canvas.spark")) {
-      const c = cv.parentElement.id.slice(1);
-      draw(cv, seriesOf(c), { now, windowMs, gapMs: gapOf(c) });
-    }
-  }
-  if (!visible("charts")) return;
-  for (const card of $("charts").querySelectorAll(".chart")) {
-    const c = card.dataset.c, unit = unitOf(c), s = seriesOf(c);
+  for (const t of $("tiles").querySelectorAll(".tile")) {
+    const c = t.id.slice(1), unit = unitOf(c), s = seriesOf(c);
     s.trim(now - 30 * 60000);
-    const big = card.classList.contains("big");
-    draw(card.querySelector("canvas"), s, { now, windowMs, big, gapMs: gapOf(c), fmtY: (y) => fmtDisp(y, unit) });
-    const pts = s.since(now - windowMs).v;
-    const last = pts.at(-1);
-    card.querySelector(".cv").textContent = last == null ? "—" : `${fmtDisp(last, unit)} ${dispUnit(unit)}`;
-    card.querySelector(".ch-foot").textContent = !pts.length ? (isSupported(c) ? "no data" : "not supported")
-      : `min ${fmtDisp(Math.min(...pts), unit)} · max ${fmtDisp(Math.max(...pts), unit)}${big ? ` · ${pts.length} pts` : ""}`;
+    const big = t.classList.contains("big");
+    t.querySelector(".hz").textContent = rateLabel(s.t, now);
+    draw(t.querySelector("canvas"), s, { now, windowMs, big, gapMs: gapOf(c), fmtY: (y) => fmtDisp(y, unit) });
+    if (big) {
+      const pts = s.since(now - windowMs).v;
+      t.querySelector(".mm").textContent = !pts.length ? (isSupported(c) ? "no data yet" : "not supported by this car")
+        : `last ${st.cfg.window} min: min ${fmtDisp(Math.min(...pts), unit)} · max ${fmtDisp(Math.max(...pts), unit)} · ${pts.length} pts`;
+    } else if (!isSupported(c)) t.querySelector(".mm").textContent = "not supported";
   }
 }
 
@@ -505,15 +485,15 @@ function applySettings() {
   for (const c of settings.enabled(st.cfg)) {
     if (st.latest[c] != null) showTile(c, st.latest[c], unitOf(c));
   }
-  buildCharts();
+  syncWindow();
   if (st.recording) st.j.w("CFG", settings.describe(st.cfg));
 }
 
 $("set-log").onchange = (e) => { st.cfg.logEvery = Number(e.target.value); applySettings(); };
 $("set-deadband").onchange = (e) => { st.cfg.deadband = e.target.checked; applySettings(); };
 $("set-window").onchange = (e) => { st.cfg.window = Number(e.target.value); applySettings(); };
-$("chart-window").onchange = (e) => { st.cfg.window = Number(e.target.value); applySettings(); syncWindow(); };
-$("set-reset").onclick = () => { if (confirm("Reset settings to defaults?")) { st.cfg = settings.defaults(); applySettings(); syncWindow(); } };
+$("chart-window").onchange = (e) => { st.cfg.window = Number(e.target.value); applySettings(); };
+$("set-reset").onclick = () => { if (confirm("Reset settings to defaults?")) { st.cfg = settings.defaults(); applySettings(); } };
 function syncWindow() { fillSelect($("chart-window"), settings.WINDOW_CHOICES, st.cfg.window, (v) => `${v} min`); }
 
 // ---------------------------------------------------------------- wiring
@@ -537,7 +517,6 @@ function showTab(name) {
   });
   document.querySelectorAll(".tab").forEach((t) => (t.hidden = t.id !== "tab-" + name));
   if (name === "logs") renderLogs();
-  if (name === "charts") syncWindow();
   drawCharts();
   try { history.replaceState(null, "", "#" + name); } catch { /* ignore */ }
 }
@@ -553,10 +532,10 @@ showBanner();
 renderCaps();
 renderSettings();
 buildTiles();
-buildCharts();
+syncWindow();
 setInterval(drawCharts, 1000);
 window.addEventListener("resize", () => drawCharts());
 {
-  const t = location.hash.slice(1);
+  const t = location.hash.slice(1) === "charts" ? "live" : location.hash.slice(1);
   if (document.querySelector(`.tabs button[data-tab="${t}"]`)) showTab(t);
 }

@@ -19,8 +19,8 @@ npm test                      # core tests (node --test), no dependencies
 
 ## Features (0.1.0-alpha)
 
-- Live: RPM, coolant, fuel rail pressure, STFT/LTFT, lambda, load, voltage (+ optional MAP, MAF, timing…), sparkline per tile.
-- Charts: mini chart for every value, tap to expand (2–30 min window); breaks show gaps.
+- Live: RPM, coolant, fuel rail pressure, STFT/LTFT, lambda, load, voltage (+ optional MAP, MAF, timing…).
+  Each tile: value, sparkline, actual poll rate (Hz or period); tap expands a full chart in place (2–30 min window).
 - Settings: on/off and poll interval per value, log line interval, jump lines; log size estimate. Saved in the browser.
 - Recording: a line every 1 s by default with only values polled since the previous line (slow values appear
   as often as they're polled), extra lines on RPM/rail/throttle/load/speed jumps,

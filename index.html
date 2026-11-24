@@ -27,7 +27,6 @@
 
   <nav class="tabs" role="tablist">
     <button data-tab="live" class="on" role="tab" aria-selected="true">Live</button>
-    <button data-tab="charts" role="tab">Charts</button>
     <button data-tab="diag" role="tab">DTCs</button>
     <button data-tab="logs" role="tab">Logs</button>
     <button data-tab="settings" role="tab">Settings</button>
@@ -36,18 +35,13 @@
 
   <main>
     <section id="tab-live" class="tab">
-      <div id="rate" class="muted small rate"></div>
-      <div id="tiles" class="tiles"></div>
-      <p id="rec-note" class="muted small"></p>
-      <p class="muted small">Tap a tile to open its chart.</p>
-    </section>
-
-    <section id="tab-charts" class="tab" hidden>
-      <div class="bar">
-        <label class="inline">Window <select id="chart-window"></select></label>
-        <span class="muted small">Tap a chart to expand.</span>
+      <div class="livebar">
+        <span id="rate" class="muted small rate"></span>
+        <label class="inline small">Chart <select id="chart-window" aria-label="chart window"></select></label>
       </div>
-      <div id="charts" class="charts"></div>
+      <div id="tiles" class="tiles"></div>
+      <p class="muted small">Tap a tile to expand its chart. Gray number on a tile = actual poll rate.</p>
+      <p id="rec-note" class="muted small"></p>
     </section>
 
     <section id="tab-diag" class="tab" hidden>

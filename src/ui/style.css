@@ -61,17 +61,17 @@ td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line
 .tabs::-webkit-scrollbar { display: none; }
 .tabs button { flex: 0 0 auto; padding-inline: 12px; }
 
-/* charts */
-.charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
-.chart { display: block; width: 100%; text-align: left; min-height: 0; padding: 8px 10px; border-radius: 12px; }
-.chart canvas { display: block; width: 100%; height: 56px; margin: 4px 0 2px; }
-.chart.big { grid-column: 1 / -1; order: -1; border-color: var(--accent); }
-.chart.big canvas { height: min(48vh, 320px); }
-.ch-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-.ch-head .k { font-size: 13px; color: var(--muted); }
-.ch-head .cv { font-weight: 650; font-variant-numeric: tabular-nums; }
-.chart.big .ch-head .cv { font-size: 20px; }
-.ch-foot { font-variant-numeric: tabular-nums; }
+/* live tiles: sparkline, actual poll rate, tap to expand in place */
+.tiles { grid-auto-flow: row dense; }
+.t-head { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
+.tile .hz { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tile.big { grid-column: 1 / -1; border-color: var(--accent); cursor: zoom-out; }
+.tile.big .spark { height: min(46vh, 300px); margin: 6px 0; }
+.tile.big .v { font-size: 30px; }
+.livebar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 0 0 6px; flex-wrap: wrap; }
+.livebar select { min-height: 32px; padding: 4px 8px; font-size: 14px; }
+.livebar .rate { margin: 0; }
 
 /* settings */
 .form { display: flex; flex-direction: column; gap: 10px; margin: 6px 0; }
@@ -88,12 +88,11 @@ table.pids tr.off .chk span { color: var(--muted); }
 @media (max-width: 420px) {
   .tile .v { font-size: 22px; }
   .tiles { grid-template-columns: repeat(2, 1fr); }
-  .charts { grid-template-columns: 1fr 1fr; }
-  .chart canvas { height: 44px; }
   table.pids td:nth-child(3) { display: none; }
   select { font-size: 16px; } /* no iOS zoom on focus */
   .tabs button { padding-inline: 8px; font-size: 15px; }
-  .ch-foot { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .mm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .livebar select { font-size: 16px; }
 }
 .rate { min-height: 18px; margin: 0 0 6px; font-variant-numeric: tabular-nums; }
 .tile .spark { display: block; width: 100%; height: 28px; margin: 2px 0; }
