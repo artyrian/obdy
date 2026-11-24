@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir _site && cp -r index.html src favicon.ico favicon.svg apple-touch-icon.png _site/
+      - run: cp -r app _site
       # cache-busting: browsers/Pages CDN keep old CSS/JS for a while, which mixes versions after a deploy
       - name: Version asset URLs
         run: |

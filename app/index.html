@@ -13,14 +13,14 @@
     try { const t = localStorage.getItem("obdy.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
   </script>
   <title>obdy</title>
-  <link rel="icon" href="favicon.ico" sizes="any">
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <link rel="stylesheet" href="src/ui/style.css">
 </head>
 <body>
   <header>
-    <div class="title"><img src="favicon.svg" alt="">obdy <span id="ver" class="ver"></span></div>
+    <div class="title"><img src="assets/favicon.svg" alt="">obdy <span id="ver" class="ver"></span></div>
     <div class="status"><span class="dot" id="dot"></span><span id="status">Not connected</span> <span id="batt" class="pill">🔋 —</span>
       <button id="theme-btn" class="icon-btn" type="button" aria-label="Toggle light/dark theme" title="Light / dark">
         <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>

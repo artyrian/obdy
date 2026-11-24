@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as S from "../src/core/settings.js";
-import { Series, yRange, rateLabel } from "../src/ui/chart.js";
+import * as S from "../app/src/core/settings.js";
+import { Series, yRange, rateLabel } from "../app/src/ui/chart.js";
 
 test("defaults: RPM first and on", () => {
   const d = S.defaults();

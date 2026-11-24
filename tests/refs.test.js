@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { refFor, status, context } from "../src/core/refs.js";
+import { refFor, status, context } from "../app/src/core/refs.js";
 
 const idleWarm = { "010C": 750, "0105": 90, "010D": 0, "0111": 15, "0144": 1 };
 

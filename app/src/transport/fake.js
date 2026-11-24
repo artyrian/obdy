@@ -13,17 +13,23 @@ export class FakeTransport {
 
   async close() {}
 
+  // smooth, plausible signals: a cold start settling to warm idle (looks like a real car in Demo)
   _pid(pid) {
-    const r = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
-    const hex = (v, n) => Math.max(0, Math.round(v)).toString(16).toUpperCase().padStart(n, "0");
-    const el = (Date.now() - this.t0) / 1000;
-    const rpm = this.rpm ? this.rpm + r(-20, 20) : 0;
+    const n = (a) => (Math.random() * 2 - 1) * a;
+    const hex = (v, k) => Math.max(0, Math.round(v)).toString(16).toUpperCase().padStart(k, "0");
+    const t = (Date.now() - this.t0) / 1000;
+    const on = !!this.rpm;
+    const rpm = on ? this.rpm + 380 * Math.exp(-t / 45) + 14 * Math.sin(t * 1.3) + n(4) : 0;
+    const ect = Math.min(92, 22 + t * 0.55);
+    const stft = 3.2 * Math.sin(t * 0.9) + 1.2 * Math.sin(t * 2.7) + n(0.6);
+    const lam = 1 + 0.011 * Math.sin(t * 1.8) + n(0.002);
+    const railKpa = on ? 3900 + 260 * Math.exp(-t / 30) + 120 * Math.sin(t * 0.55) + n(25) : 700;
     return {
-      0x01: "00076500", 0x04: hex(64, 2), 0x05: hex(Math.min(92, 20 + el) + 40, 2),
-      0x06: hex(128 + r(-5, 5), 2), 0x07: hex(131, 2), 0x0b: "23", 0x0c: hex(rpm * 4, 4),
-      0x0d: "00", 0x0e: hex((8 + 64) * 2, 2), 0x0f: "3A", 0x10: hex(300 + r(-10, 10), 4),
-      0x11: "2C", 0x23: hex((rpm ? 180 : 70) + r(-8, 8), 4), 0x34: hex(32768 + r(-500, 500), 4) + "8000",
-      0x44: "80008000", 0x42: hex(rpm ? 14400 : 12300, 4),
+      0x01: "00076500", 0x04: hex((24 + 2 * Math.sin(t * 0.7)) * 2.55, 2), 0x05: hex(ect + 40, 2),
+      0x06: hex(128 + stft * 1.28, 2), 0x07: hex(131, 2), 0x0b: "23", 0x0c: hex(rpm * 4, 4),
+      0x0d: "00", 0x0e: hex((8 + 64) * 2, 2), 0x0f: "3A", 0x10: hex(300 + 25 * Math.sin(t * 0.7), 4),
+      0x11: hex(17 * 2.55, 2), 0x23: hex(railKpa / 10, 4), 0x34: hex(32768 * lam, 4) + "8000",
+      0x44: "80008000", 0x42: hex(on ? 14400 + 60 * Math.sin(t * 0.2) : 12300, 4),
     }[pid];
   }
 

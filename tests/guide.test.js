@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PRESETS, newRun, tick, advance, active } from "../src/core/guide.js";
+import { PRESETS, newRun, tick, advance, active } from "../app/src/core/guide.js";
 
 const run1 = (run, from, to, step, vals, alive = true) => {
   let r;
