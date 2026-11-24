@@ -5,6 +5,7 @@ import { BleTransport, bleAvailable } from "./transport/ble.js";
 import { FakeTransport } from "./transport/fake.js";
 import * as settings from "./core/settings.js";
 import { refFor, status as refStatus } from "./core/refs.js";
+import * as guide from "./core/guide.js";
 import { Series, draw, rateLabel } from "./ui/chart.js";
 
 const VERSION = "0.1.0-alpha"; // keep in sync with package.json (checked by tests)
@@ -79,6 +80,7 @@ function setConnected(on) {
   $("connect").hidden = on; $("demo").hidden = on; $("disconnect").hidden = !on;
   $("rec").hidden = !on; $("read-diag").disabled = !on;
   updateStatus();
+  updateGuideUI();
 }
 
 // kPa is shown as psi everywhere in the UI (journal keeps kPa)
@@ -206,6 +208,7 @@ function hideError() { $("err").hidden = true; }
 
 async function teardown() {
   st.polling = false;
+  if (st.guide) await finishGuide(true, true); // adapter gone: no after-snapshot
   await stopRecording();
   try { await st.transport?.close(); } catch { /* ignore */ }
   st.j?.w("SESSION", { event: "end" });
@@ -226,8 +229,12 @@ async function pollLoop() {
   let n = 0, tRate = performance.now();
   while (st.polling && st.elm) {
     const now0 = Date.now();
-    const list = settings.due(st.cfg, st.lastPoll, now0).filter((c) => isSupported(c) || ((st.lastPoll[c] = now0), false));
-    if (!list.length) { await sleep(Math.min(250, settings.nextDueIn(st.cfg, st.lastPoll, Date.now()) || 20)); continue; }
+    const fastStep = guide.active(st.guide)?.fast;
+    const list = settings.due(st.cfg, st.lastPoll, now0)
+      .filter((c) => isSupported(c) || ((st.lastPoll[c] = now0), false))
+      // fast guided steps: only the fast set every cycle, the rest at most every 10 s
+      .filter((c) => !fastStep || guide.FAST.has(c) || now0 - (st.lastPoll[c] ?? 0) >= 10000);
+    if (!list.length) { await guideTick({}, st.alive !== false); await sleep(Math.min(250, settings.nextDueIn(st.cfg, st.lastPoll, Date.now()) || 20)); continue; }
     const vals = {};
     let alive = true;
     for (const c of list) {
@@ -258,12 +265,14 @@ async function pollLoop() {
     if (st.recording) {
       const jump = st.cfg.deadband && now - st.lastW >= DEADBAND_MIN_MS && moved(st.lastVals, st.unwritten);
       if (alive ? now - st.lastW >= st.cfg.logEvery || jump : lost) {
-        st.j.sample(st.unwritten, { sess: st.sess, t: ((now - st.t0) / 1000).toFixed(2) });
+        const phase = guide.active(st.guide)?.id;
+        st.j.sample(st.unwritten, { sess: st.sess, ...(phase ? { phase } : {}), t: ((now - st.t0) / 1000).toFixed(2) });
         st.lastW = now; st.lastVals = { ...st.lastVals, ...st.unwritten }; st.unwritten = {};
       }
       if (alive && now - st.lastDtc > DTC_POLL_MS) { st.lastDtc = now; await pollDtcMisfires(); }
     } else st.unwritten = {};
     if (st.elm && now - st.lastBatt > BATT_POLL_MS) { st.lastBatt = now; await pollBattery(st.latest["010C"]); }
+    await guideTick(vals, alive);
     if (!alive) { st.latest["010C"] = 0; await sleep(1000); }
   }
 }
@@ -339,6 +348,7 @@ async function startRecording() {
 
 async function stopRecording() {
   if (!st.recording) return;
+  if (st.guide && !st.guide.finishing) await finishGuide(true, !st.elm);
   st.recording = false;
   $("rec").classList.remove("on"); $("rec").textContent = "● Record";
   st.j.w("STEP", { sess: st.sess, id: "record", event: "stop", t: ((Date.now() - st.t0) / 1000).toFixed(1) });
@@ -543,6 +553,182 @@ $("chart-window").onchange = (e) => { st.cfg.window = Number(e.target.value); ap
 $("set-reset").onclick = () => { if (confirm("Reset settings to defaults?")) { st.cfg = settings.defaults(); applySettings(); } };
 function syncWindow() { fillSelect($("chart-window"), settings.WINDOW_CHOICES, st.cfg.window, (v) => `${v} min`); }
 
+
+// ---------------------------------------------------------------- guided test
+const STEP_MARK = { pending: "○", active: "▶", done: "✔", skipped: "–" };
+
+function renderPresets() {
+  const el = $("g-presets");
+  el.innerHTML = "";
+  for (const [id, p] of Object.entries(guide.PRESETS)) {
+    const b = document.createElement("button");
+    b.className = "preset"; b.type = "button";
+    b.innerHTML = `<div class="p-head"><b></b><span class="muted small"></span></div><div class="small p-desc"></div>
+      <ol class="small muted"></ol>`;
+    b.querySelector("b").textContent = p.label;
+    b.querySelector(".p-head span").textContent = p.time;
+    b.querySelector(".p-desc").textContent = p.desc;
+    for (const s of p.steps()) { const li = document.createElement("li"); li.textContent = s.title; b.querySelector("ol").append(li); }
+    b.onclick = () => startGuide(id);
+    el.append(b);
+  }
+  updateGuideUI();
+}
+
+async function startGuide(preset) {
+  if (!st.elm) { toast("connect the adapter (or Demo) first"); return; }
+  if (st.guide) return;
+  if (!st.recording) await startRecording();
+  const run = guide.newRun(preset, Date.now());
+  run.sess = st.sess;
+  st.j.w("STEP", { sess: st.sess, id: "begin", event: "start", preset });
+  $("g-status").textContent = "reading DTCs and misfire counters…";
+  st.guide = run; // set before the snapshot so the UI switches immediately
+  updateGuideUI();
+  run.before = { dtc: await st.elm.dtcs(), mis: await st.elm.misfires() };
+  for (const [type, x] of Object.entries(run.before.dtc)) st.j.w("DTC", { tag: "before", sess: st.sess, type, codes: x.codes.join(",") || "-" });
+  for (const [cyl, m] of Object.entries(run.before.mis)) st.j.w("MISFIRE", { tag: "before", sess: st.sess, cyl, cycle: m.cycle ?? "", avg10: m.avg10 ?? "" });
+  const v = await st.elm.voltage();
+  if (v != null) st.j.w("BATT", { v, tag: "before" });
+  run.stepT0 = run.last = Date.now();
+  stepStart(run);
+  log(`guided test: ${guide.PRESETS[preset].label}`);
+}
+
+function stepStart(run) {
+  const s = guide.active(run);
+  if (s) st.j.w("STEP", { sess: run.sess, id: s.id, event: "start", title: s.title });
+  updateGuideUI();
+}
+
+async function guideTick(fresh, alive) {
+  const run = st.guide;
+  if (!run || !run.before || run.finishing) return;
+  const prev = guide.active(run);
+  const r = guide.tick(run, { now: Date.now(), alive, latest: st.latest, fresh });
+  if (prev && prev.state !== "active") stepEnd(run, prev);
+  if (r) updateGuideUI(r);
+  if (!guide.active(run)) await finishGuide();
+}
+
+function stepEnd(run, s) {
+  st.j.w("STEP", { sess: run.sess, id: s.id, event: s.state, t: (s.t ?? 0).toFixed(1), status: s.msg || "" });
+  log(`step ${s.id}: ${s.state}`);
+  stepStart(run);
+}
+
+function guideNext() {
+  const run = st.guide;
+  if (!run?.before) return;
+  const s = guide.active(run);
+  if (!s) return;
+  guide.advance(run, Date.now(), s.manual ? "done" : "skipped");
+  stepEnd(run, s);
+  if (!guide.active(run)) finishGuide();
+}
+
+async function finishGuide(stopped = false, noSnapshot = false) {
+  const run = st.guide;
+  if (!run || run.finishing) return;
+  run.finishing = true;
+  $("g-status").textContent = "reading DTCs and misfire counters again — keep the engine running…";
+  const res = { stopped, dtc: null, mis: null };
+  const alive = !noSnapshot && run.before && st.elm && dataBytes(await st.elm.cmd("010C", 2000), "410C") != null;
+  if (alive) {
+    res.dtc = await st.elm.dtcs();
+    res.mis = await st.elm.misfires();
+    for (const [type, x] of Object.entries(res.dtc)) {
+      st.j.w("RESULT", { sess: run.sess, what: `dtc_${type}`, before: run.before.dtc[type]?.codes.join(",") || "-", after: x.codes.join(",") || "-" });
+    }
+    for (const [cyl, m] of Object.entries(res.mis)) {
+      st.j.w("RESULT", { sess: run.sess, what: "misfire", cyl, before: run.before.mis[cyl]?.cycle ?? "", after: m.cycle ?? "" });
+    }
+    const v = await st.elm?.voltage();
+    if (v != null) st.j.w("BATT", { v, tag: "after" });
+  } else if (st.j) st.j.w("RESULT", { sess: run.sess, what: "after_snapshot", status: "skipped_ecu_off" });
+  for (const [phase, keys] of Object.entries(run.stats)) {
+    for (const [k, x] of Object.entries(keys)) {
+      st.j?.w("STAT", { sess: run.sess, phase, key: k, min: +x.min.toFixed(3), mean: +(x.sum / x.n).toFixed(3), max: +x.max.toFixed(3), n: x.n });
+    }
+  }
+  st.j?.w("STEP", { sess: run.sess, id: "end", event: stopped ? "stopped" : "done" });
+  log(`guided test ${stopped ? "stopped" : "done"}`);
+  st.lastGuide = { run, res };
+  st.guide = null;
+  updateGuideUI();
+  renderGuideResult();
+}
+
+function updateGuideUI(r) {
+  const run = st.guide;
+  $("g-pick").hidden = !!run;
+  $("g-run").hidden = !run;
+  $("gbar").hidden = !run;
+  document.querySelectorAll(".preset").forEach((b) => (b.disabled = !st.elm));
+  $("g-hint").hidden = !!st.elm;
+  if (!run) return;
+  const s = guide.active(run);
+  const n = run.steps.length, i = Math.min(run.i + 1, n);
+  $("g-title").textContent = s ? s.title : "Finishing…";
+  $("g-count").textContent = `${guide.PRESETS[run.preset].label} · step ${i}/${n}`;
+  $("g-text").textContent = s ? s.text : "";
+  if (r) {
+    $("g-bar").style.width = `${(r.p * 100).toFixed(0)}%`;
+    $("g-status").textContent = r.msg;
+  } else $("g-bar").style.width = "0%";
+  $("g-next").textContent = s?.manual ? "Finish ✔" : "Skip ›";
+  $("g-next").disabled = !s || !run.before;
+  $("gb-step").textContent = s ? `${i}/${n} · ${s.title}` : "Finishing…";
+  $("gb-status").textContent = r?.msg ?? "";
+  $("gb-next").textContent = $("g-next").textContent;
+  $("gb-next").disabled = $("g-next").disabled;
+  const ol = $("g-list");
+  ol.innerHTML = "";
+  for (const x of run.steps) {
+    const li = document.createElement("li");
+    li.className = x.state;
+    li.innerHTML = `<span class="mk"></span><span class="tt"></span><span class="muted small"></span>`;
+    li.querySelector(".mk").textContent = STEP_MARK[x.state];
+    li.querySelector(".tt").textContent = x.title;
+    li.querySelector(".small").textContent = x.state === "done" || x.state === "skipped" ? `${(x.t ?? 0).toFixed(0)} s` : "";
+    ol.append(li);
+  }
+}
+
+function renderGuideResult() {
+  const g = st.lastGuide;
+  const el = $("g-result");
+  if (!g) { el.hidden = true; return; }
+  const { run, res } = g;
+  const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  let h = `<h4>${esc(guide.PRESETS[run.preset].label)} test ${res.stopped ? "stopped" : "done"} ✔</h4><ol class="checklist small">`;
+  for (const x of run.steps) h += `<li class="${x.state}"><span class="mk">${STEP_MARK[x.state]}</span><span class="tt">${esc(x.title)}</span><span class="muted">${x.t != null ? x.t.toFixed(0) + " s" : ""}</span></li>`;
+  h += `</ol>`;
+  if (res.dtc) {
+    h += `<table class="small"><tr><th></th><th>before</th><th>after</th></tr>`;
+    for (const [type, x] of Object.entries(res.dtc)) {
+      const b = run.before.dtc[type]?.codes.join(", ") || "none", a = x.codes.join(", ") || "none";
+      h += `<tr><td>${type}</td><td>${esc(b)}</td><td class="${x.codes.length ? "bad" : "ok"}">${esc(a)}</td></tr>`;
+    }
+    for (const [cyl, m] of Object.entries(res.mis)) {
+      if (cyl === "all" && m.cycle == null) continue;
+      const b = run.before.mis[cyl]?.cycle ?? "—";
+      h += `<tr><td>misfires ${cyl}</td><td>${b}</td><td class="${(m.cycle ?? 0) > 0 ? "warn" : ""}">${m.cycle ?? "—"}</td></tr>`;
+    }
+    h += `</table>`;
+  } else h += `<p class="muted small">After-test snapshot skipped: ECU not answering (engine/ignition off).</p>`;
+  h += `<p class="muted small">Everything is in the current log (session ${esc(run.sess)}). Share it for review:</p>
+    <div class="bar"><button id="g-share" class="primary">Share log</button><button id="g-again">New test</button></div>`;
+  el.innerHTML = h;
+  el.hidden = false;
+  $("g-share").onclick = () => exportLog(st.j?.id, "share").catch((e) => log("export: " + e.message));
+  $("g-again").onclick = () => { st.lastGuide = null; renderGuideResult(); };
+}
+
+$("g-next").onclick = guideNext;
+$("gb-next").onclick = guideNext;
+$("g-stop").onclick = () => { if (confirm("Stop the guided test?")) finishGuide(true); };
+$("gb-open").onclick = () => showTab("diag");
 // ---------------------------------------------------------------- wiring
 function renderCaps() {
   $("caps").innerHTML = "";
@@ -580,6 +766,7 @@ $("ver").textContent = VERSION;
 showBanner();
 renderCaps();
 renderSettings();
+renderPresets();
 buildTiles();
 syncWindow();
 setInterval(drawCharts, 1000);

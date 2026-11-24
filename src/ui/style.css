@@ -102,3 +102,30 @@ table.pids tr.off .chk span { color: var(--muted); }
 .banner.err { background: #fdecec; color: #7f1d1d; border-color: #f3b4b4; }
 @media (prefers-color-scheme: dark) { .banner.err { background: #2a1414; color: #fca5a5; border-color: #7f1d1d; } }
 .banner.err .msg { font-weight: 600; word-break: break-word; }
+
+/* guided test */
+.presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.preset { text-align: left; padding: 10px 12px; border-radius: 12px; display: block; width: 100%; }
+.preset:disabled { opacity: .5; }
+.preset .p-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 16px; }
+.preset .p-desc { margin: 2px 0 4px; }
+.preset ol { margin: 4px 0 0; padding-left: 18px; }
+.g-run h3 { margin: 4px 0 6px; font-size: 20px; }
+.g-run p { margin: 0 0 10px; }
+.progress { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.progress > div { height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+.g-status { margin: 8px 0; font-variant-numeric: tabular-nums; font-weight: 600; min-height: 1.3em; }
+.checklist { list-style: none; padding: 0; margin: 10px 0 0; }
+.checklist li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-top: 1px solid var(--line); }
+.checklist li .tt { flex: 1; }
+.checklist .mk { width: 1.2em; text-align: center; }
+.checklist li.active { font-weight: 650; color: var(--accent); }
+.checklist li.done .mk { color: var(--ok); }
+.checklist li.pending, .checklist li.skipped { color: var(--muted); }
+.gbar { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; align-items: center; padding: 8px 10px; margin: 6px 0;
+  border: 1px solid var(--accent); border-radius: 12px; background: var(--card); }
+.gbar .gb-text { flex: 1; min-width: 0; text-align: left; border: 0; background: none; padding: 0; min-height: 0;
+  display: flex; flex-direction: column; color: var(--text); }
+.gbar .gb-text b, .gbar .gb-text span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+[hidden] { display: none !important; }

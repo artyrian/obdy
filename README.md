@@ -43,13 +43,21 @@ npm test                      # core tests (node --test), no dependencies
 - Recording starts automatically on connect (can be turned off in Settings): a line every 1 s by default with only values polled since the previous line (slow values appear
   as often as they're polled), extra lines on RPM/rail/throttle/load/speed jumps,
   DTCs and per-cylinder misfires every 20 s, freeze frame on new DTC, Wake Lock keeps the screen on.
+- Guided test (Test tab): step-by-step checklist with progress, auto-advance and Skip/Finish; a sticky step bar
+  stays visible on every tab. Presets:
+  - **Quick** (~2 min): ignition on 15 s → start + 60 s idle.
+  - **Standard** (~10 min, cold start): ignition 30 s → off/on (second prime) → start + 90 s → warm-up to 80 °C → 60 s idle.
+  - **Full** (~25 min): Standard + 2500 rpm hold, 3 throttle snaps, idle, 10–15 min drive.
+
+  Before/after DTCs and misfire counters, `STEP`/`RESULT` lines, per-step `STAT` (min/mean/max), `phase=` on S lines;
+  snap/off-on/drive steps poll only the fast set (RPM, rail, trims, lambda, load, throttle).
 - DTCs: modes 03/07/0A, freeze frame, Mode 06 misfires per cylinder.
 - Logs go to IndexedDB immediately; export: Share / Download / Copy.
 
 ## Log format
 
 `<date> <time.ms> <TAG> key=value ...`, same as `tools/obd_tui.py`.
-Tags: SESSION CONN ELM KEYS CFG S STEP DTC DTC_NEW FF MISFIRE ANOM BATT LOG.
+Tags: SESSION CONN ELM KEYS CFG S STEP DTC DTC_NEW FF MISFIRE ANOM BATT RESULT STAT LOG.
 `CFG` records poll settings (ms per PID) at record start and on every change.
 
 ```sh
@@ -63,6 +71,7 @@ index.html
 favicon.svg/.ico · apple-touch-icon.png
 src/app.js              UI
 src/core/               pids.js (decoders) · elm.js (protocol) · journal.js · settings.js (poll schedule)
+                        refs.js (normal ranges) · guide.js (guided test steps/presets)
 src/ui/                 style.css · chart.js (canvas charts)
 src/transport/          ble.js (Web Bluetooth) · fake.js (demo)
 tests/                  node --test

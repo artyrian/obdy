@@ -17,6 +17,10 @@
   </header>
 
   <div id="banner" class="banner" hidden></div>
+  <div id="gbar" class="gbar" hidden>
+    <button id="gb-open" class="gb-text" type="button"><b id="gb-step"></b><span id="gb-status" class="muted small"></span></button>
+    <button id="gb-next">Skip ›</button>
+  </div>
   <div id="err" class="banner err" role="alert" hidden>
     <div class="msg"></div>
     <div class="bar"><button id="err-copy">Copy log</button><button id="err-close">Dismiss</button></div>
@@ -32,7 +36,7 @@
 
   <nav class="tabs" role="tablist">
     <button data-tab="live" class="on" role="tab" aria-selected="true">Live</button>
-    <button data-tab="diag" role="tab">DTCs</button>
+    <button data-tab="diag" role="tab">Test</button>
     <button data-tab="logs" role="tab">Logs</button>
     <button data-tab="settings" role="tab">Settings</button>
     <button data-tab="info" role="tab">Info</button>
@@ -50,8 +54,28 @@
     </section>
 
     <section id="tab-diag" class="tab" hidden>
-      <div class="bar"><button id="read-diag" disabled>Read DTCs and misfires</button></div>
-      <div id="diag-out"></div>
+      <div id="g-pick" class="card">
+        <h4>Guided test</h4>
+        <p class="muted small">Step-by-step checklist. Records everything with step markers, reads DTCs and misfire
+          counters before and after, and writes per-step min/mean/max.</p>
+        <p id="g-hint" class="muted small">Connect the adapter (or Demo) to start.</p>
+        <div id="g-presets" class="presets"></div>
+      </div>
+      <div id="g-run" class="card g-run" hidden>
+        <div class="g-head"><span id="g-count" class="muted small"></span></div>
+        <h3 id="g-title"></h3>
+        <p id="g-text"></p>
+        <div class="progress"><div id="g-bar"></div></div>
+        <div id="g-status" class="g-status"></div>
+        <div class="bar"><button id="g-next" class="primary">Skip ›</button><button id="g-stop">Stop test</button></div>
+        <ol id="g-list" class="checklist"></ol>
+      </div>
+      <div id="g-result" class="card" hidden></div>
+      <div class="card">
+        <h4>DTCs and misfires</h4>
+        <div class="bar"><button id="read-diag" disabled>Read now</button></div>
+        <div id="diag-out"></div>
+      </div>
     </section>
 
     <section id="tab-logs" class="tab" hidden>
