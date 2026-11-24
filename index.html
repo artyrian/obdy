@@ -21,25 +21,33 @@
   <section class="bar">
     <button id="connect" class="primary">Connect adapter</button>
     <button id="demo">Demo</button>
+    <button id="rec" class="rec" hidden>● Record</button>
     <button id="disconnect" hidden>Disconnect</button>
   </section>
 
-  <nav class="tabs">
-    <button data-tab="live" class="on">Live</button>
-    <button data-tab="diag">DTCs</button>
-    <button data-tab="logs">Logs</button>
-    <button data-tab="info">Info</button>
+  <nav class="tabs" role="tablist">
+    <button data-tab="live" class="on" role="tab" aria-selected="true">Live</button>
+    <button data-tab="charts" role="tab">Charts</button>
+    <button data-tab="diag" role="tab">DTCs</button>
+    <button data-tab="logs" role="tab">Logs</button>
+    <button data-tab="settings" role="tab">Settings</button>
+    <button data-tab="info" role="tab">Info</button>
   </nav>
 
   <main>
     <section id="tab-live" class="tab">
-      <div class="bar">
-        <button id="rec" class="rec" disabled>● Record</button>
-        <span id="rate" class="muted"></span>
-      </div>
+      <div id="rate" class="muted small rate"></div>
       <div id="tiles" class="tiles"></div>
-      <p class="muted small">Recording: ~1 sample/s (more on change), DTCs and misfires every 20 s.
-        Saved to the on-device log immediately.</p>
+      <p id="rec-note" class="muted small"></p>
+      <p class="muted small">Tap a tile to open its chart.</p>
+    </section>
+
+    <section id="tab-charts" class="tab" hidden>
+      <div class="bar">
+        <label class="inline">Window <select id="chart-window"></select></label>
+        <span class="muted small">Tap a chart to expand.</span>
+      </div>
+      <div id="charts" class="charts"></div>
     </section>
 
     <section id="tab-diag" class="tab" hidden>
@@ -49,6 +57,26 @@
 
     <section id="tab-logs" class="tab" hidden>
       <div id="logs"></div>
+    </section>
+
+    <section id="tab-settings" class="tab" hidden>
+      <div class="card">
+        <h4>Log</h4>
+        <div class="form">
+          <label class="inline">Sample line every <select id="set-log"></select></label>
+          <label class="chk"><input type="checkbox" id="set-deadband"><span>Extra line on sudden jumps (RPM, rail, throttle, load, speed)</span></label>
+          <label class="inline">Chart window <select id="set-window"></select></label>
+        </div>
+        <p id="set-est" class="muted small"></p>
+      </div>
+      <div class="card">
+        <h4>Polled values</h4>
+        <p class="muted small">Fewer values and slower intervals mean faster updates for the rest and a smaller log.
+          Slow-changing values (coolant, LTFT, voltage) don't need every cycle.</p>
+        <table class="pids"><tbody id="set-pids"></tbody></table>
+        <div class="bar"><button id="set-reset">Reset to defaults</button></div>
+      </div>
+      <p class="muted small">Settings are saved in this browser.</p>
     </section>
 
     <section id="tab-info" class="tab" hidden>

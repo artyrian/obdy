@@ -1,25 +1,25 @@
 import { Elm } from "./core/elm.js";
-import { dataBytes, decode, fmt, parseDtcs, replyPrefix } from "./core/pids.js";
+import { KPA_PSI, dataBytes, decode, fmt, parseDtcs, replyPrefix } from "./core/pids.js";
 import { Journal, listSessions, sessionText, deleteSession } from "./core/journal.js";
 import { BleTransport, bleAvailable } from "./transport/ble.js";
 import { FakeTransport } from "./transport/fake.js";
+import * as settings from "./core/settings.js";
+import { Series, draw } from "./ui/chart.js";
 
 const VERSION = "0.1.0-alpha"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
-// live set: key params, ~8–11 cmds -> ~1 sample/s over BLE
-const LIVE = ["010C", "0105", "0123", "0106", "0107", "0134", "0144", "0104", "0111", "010D", "0142"];
-const TILE_LABEL = { "010C": "RPM", "0105": "Coolant", "0123": "Fuel rail", "0106": "STFT",
-  "0107": "LTFT", "0134": "Lambda", "0144": "Lambda cmd", "0104": "Load", "0111": "Throttle",
-  "010D": "Speed", "0142": "Voltage" };
 // write an extra S line when one of these moved by at least this much
-const DEADBAND = { "010C": 50, "0123": 300, "0106": 2, "0134": 0.02, "0144": 0.02, "0111": 2, "0104": 5, "010D": 3 };
+// thresholds sit above normal idle jitter so a steady engine doesn't bloat the log
+const DEADBAND = { "010C": 150, "0123": 300, "0111": 3, "0104": 5, "010D": 3 }; // trims/lambda oscillate by design
+const DEADBAND_MIN_MS = 250; // at most 4 extra lines/s
 const DTC_POLL_MS = 20000;
 const BATT_POLL_MS = 15000;
 
 const $ = (id) => document.getElementById(id);
 const st = { elm: null, transport: null, j: null, polling: false, recording: false, wake: null,
-  minmax: {}, lastW: 0, lastVals: {}, lastDtc: 0, lastBatt: 0, dtcSeen: new Set(), misLive: {}, t0: 0 };
+  minmax: {}, lastW: 0, lastVals: {}, lastDtc: 0, lastBatt: 0, dtcSeen: new Set(), misLive: {}, t0: 0,
+  cfg: settings.load(), lastPoll: {}, latest: {}, unwritten: {}, series: {}, units: {} };
 
 // ---------------------------------------------------------------- env
 const ua = navigator.userAgent;
@@ -74,32 +74,44 @@ function updateStatus() {
 
 function setConnected(on) {
   $("connect").hidden = on; $("demo").hidden = on; $("disconnect").hidden = !on;
-  $("rec").disabled = !on; $("read-diag").disabled = !on;
+  $("rec").hidden = !on; $("read-diag").disabled = !on;
   updateStatus();
 }
 
+// kPa is shown as psi everywhere in the UI (journal keeps kPa)
+const dispUnit = (unit) => (unit === "kPa" ? "psi" : unit);
+const dispVal = (v, unit) => (v == null ? null : unit === "kPa" ? v * KPA_PSI : v);
+const fmtDisp = (v, unit) => (v == null ? "—" : unit === "kPa" ? v.toFixed(0) : unit === "λ" ? v.toFixed(3)
+  : Math.abs(v) >= 100 || Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1));
+const unitOf = (c) => st.units[c] ?? (st.units[c] = decode(c, null).unit);
+const labelOf = (c) => settings.LABEL[c] || c;
+// unknown until connected; RPM is always polled (liveness check)
+const isSupported = (c) => c === "010C" || !st.supported || st.supported.has(parseInt(c.slice(2), 16));
+
 function buildTiles() {
   $("tiles").innerHTML = "";
-  for (const c of LIVE) {
+  for (const c of settings.enabled(st.cfg)) {
     const d = document.createElement("div");
     d.className = "tile"; d.id = "t" + c;
-    d.innerHTML = `<div class="k"></div><div><span class="v">—</span><span class="u"></span></div><div class="mm"></div>`;
-    d.querySelector(".k").textContent = TILE_LABEL[c] || c;
+    d.innerHTML = `<div class="k"></div><div><span class="v">—</span><span class="u"></span></div>
+      <canvas class="spark" aria-hidden="true"></canvas><div class="mm"></div>`;
+    d.querySelector(".k").textContent = labelOf(c);
+    d.onclick = () => openChart(c);
     $("tiles").append(d);
   }
 }
 
 function showTile(c, v, unit) {
-  const t = $("t" + c);
-  if (!t) return;
-  let shown = v == null ? "—" : unit === "kPa" ? (v * 0.145038).toFixed(0) : fmt(v, unit);
-  const u = unit === "kPa" ? "psi" : unit;
-  t.querySelector(".v").textContent = shown;
-  t.querySelector(".u").textContent = v == null ? "" : u;
   if (v != null) {
     const mm = st.minmax[c] || [v, v];
     st.minmax[c] = [Math.min(mm[0], v), Math.max(mm[1], v)];
-    const f = (x) => (unit === "kPa" ? (x * 0.145038).toFixed(0) : fmt(x, unit));
+  }
+  const t = $("t" + c);
+  if (!t) return;
+  t.querySelector(".v").textContent = fmtDisp(dispVal(v, unit), unit);
+  t.querySelector(".u").textContent = v == null ? "" : dispUnit(unit);
+  if (st.minmax[c]) {
+    const f = (x) => fmtDisp(dispVal(x, unit), unit);
     t.querySelector(".mm").textContent = `min ${f(st.minmax[c][0])} · max ${f(st.minmax[c][1])}`;
   }
 }
@@ -119,9 +131,15 @@ async function connect(demo) {
     const { ati, probe } = await st.elm.init(log);
     st.j.w("ELM", { ati, probe });
     if (!probe.startsWith("41")) log("⚠ ECU not responding — turn ignition on");
+    st.supported = probe.startsWith("41") ? await st.elm.supported().catch(() => null) : null;
+    if (st.supported?.size) {
+      const off = settings.enabled(st.cfg).filter((c) => !isSupported(c));
+      if (off.length) log(`not supported by this car: ${off.map(labelOf).join(", ")}`);
+    } else st.supported = null;
+    renderSettings();
     setConnected(true);
+    st.minmax = {}; st.lastPoll = {}; st.latest = {}; st.unwritten = {};
     buildTiles();
-    st.minmax = {};
     pollLoop();
   } catch (e) {
     log("connect failed: " + e.message);
@@ -150,17 +168,27 @@ async function pollLoop() {
   st.polling = true;
   let n = 0, tRate = performance.now();
   while (st.polling && st.elm) {
+    const now0 = Date.now();
+    const list = settings.due(st.cfg, st.lastPoll, now0).filter((c) => isSupported(c) || ((st.lastPoll[c] = now0), false));
+    if (!list.length) { await sleep(Math.min(250, settings.nextDueIn(st.cfg, st.lastPoll, Date.now()) || 20)); continue; }
     const vals = {};
     let alive = true;
-    for (const c of LIVE) {
+    for (const c of list) {
+      if (!st.polling || !st.elm) return;
       const r = await st.elm.cmd(c, 2000);
+      const t = Date.now();
+      st.lastPoll[c] = t;
       const b = dataBytes(r, replyPrefix(c));
-      if (c === "010C" && !b) { alive = false; vals.ecu = r; break; }
+      if (c === "010C" && !b) { alive = false; vals.ecu = r || "none"; break; }
       const d = decode(c, b);
+      st.units[c] = d.unit;
       vals[c] = d.value;
+      if (d.value != null) st.latest[c] = d.value;
       showTile(c, d.value, d.unit);
+      seriesOf(c).push(t, dispVal(d.value, d.unit));
       n++;
     }
+    Object.assign(st.unwritten, vals);
     const now = Date.now();
     const dt = (performance.now() - tRate) / 1000;
     if (dt > 2) {
@@ -168,16 +196,19 @@ async function pollLoop() {
       n = 0; tRate = performance.now();
     }
     if (st.recording) {
-      if (now - st.lastW >= 1000 || moved(st.lastVals, vals) || !alive) {
-        st.j.sample(vals, { sess: st.sess, t: ((now - st.t0) / 1000).toFixed(2) });
-        st.lastW = now; st.lastVals = vals;
+      const jump = st.cfg.deadband && now - st.lastW >= DEADBAND_MIN_MS && moved(st.lastVals, st.unwritten);
+      if (now - st.lastW >= st.cfg.logEvery || jump || !alive) {
+        st.j.sample(st.unwritten, { sess: st.sess, t: ((now - st.t0) / 1000).toFixed(2) });
+        st.lastW = now; st.lastVals = { ...st.lastVals, ...st.unwritten }; st.unwritten = {};
       }
-      if (alive && now - st.lastDtc > DTC_POLL_MS) { st.lastDtc = now; await pollDtcMisfires(vals); }
-    }
-    if (now - st.lastBatt > BATT_POLL_MS) { st.lastBatt = now; await pollBattery(vals["010C"]); }
-    if (!alive) await new Promise((r) => setTimeout(r, 1000));
+      if (alive && now - st.lastDtc > DTC_POLL_MS) { st.lastDtc = now; await pollDtcMisfires(); }
+    } else st.unwritten = {};
+    if (st.elm && now - st.lastBatt > BATT_POLL_MS) { st.lastBatt = now; await pollBattery(st.latest["010C"]); }
+    if (!alive) { st.latest["010C"] = 0; await sleep(1000); }
   }
 }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function pollBattery(rpm) {
   const v = await st.elm.voltage();
@@ -197,7 +228,8 @@ async function pollBattery(rpm) {
   if (cls === "bad") log(`⚠ battery ${v.toFixed(2)} V — ${state}`);
 }
 
-async function pollDtcMisfires(vals) {
+async function pollDtcMisfires() {
+  const vals = st.latest;
   const rpm = vals["010C"];
   if (rpm > 400) {
     const mis = await st.elm.misfires();
@@ -227,9 +259,14 @@ async function startRecording() {
   st.sess = "r" + Journal.newId().slice(9);
   st.t0 = Date.now(); st.lastW = 0; st.lastDtc = 0; st.misLive = {};
   const keys = {};
-  for (const c of LIVE) { const d = decode(c, null); keys[c] = `${d.name.replace(/[ /]/g, "_")}[${d.unit || "raw"}]`; }
+  for (const c of settings.enabled(st.cfg)) {
+    const d = decode(c, null);
+    keys[c] = `${d.name.replace(/[ /.]+/g, "_")}[${d.unit || "raw"}]`;
+  }
   st.j.w("STEP", { sess: st.sess, id: "record", event: "start" });
   st.j.w("KEYS", keys);
+  st.j.w("CFG", settings.describe(st.cfg));
+  st.unwritten = {}; st.lastVals = {};
   const d = await st.elm.dtcs();
   st.dtcSeen = new Set(Object.values(d).flatMap((x) => x.codes));
   for (const [type, x] of Object.entries(d)) st.j.w("DTC", { tag: "before", type, codes: x.codes.join(",") || "-", raw: x.raw });
@@ -356,6 +393,129 @@ async function renderLogs() {
   }
 }
 
+
+// ---------------------------------------------------------------- charts tab
+const seriesOf = (c) => st.series[c] ?? (st.series[c] = new Series());
+const visible = (tab) => !$("tab-" + tab).hidden && document.visibilityState === "visible";
+const gapOf = (c) => Math.max(10000, 3 * (st.cfg.pids[c]?.every || 0));
+
+function buildCharts() {
+  const el = $("charts");
+  const open = el.querySelector(".chart.big")?.dataset.c;
+  el.innerHTML = "";
+  for (const c of settings.enabled(st.cfg)) {
+    const d = document.createElement("button");
+    d.className = "chart"; d.dataset.c = c; d.type = "button";
+    d.setAttribute("aria-expanded", "false");
+    d.innerHTML = `<div class="ch-head"><span class="k"></span><span class="cv"></span></div>
+      <canvas></canvas><div class="ch-foot muted small"></div>`;
+    d.querySelector(".k").textContent = labelOf(c);
+    d.onclick = () => toggleChart(d);
+    el.append(d);
+    if (c === open) toggleChart(d, true);
+  }
+  drawCharts();
+}
+
+function toggleChart(card, force) {
+  const big = force ?? !card.classList.contains("big");
+  $("charts").querySelectorAll(".chart.big").forEach((x) => { x.classList.remove("big"); x.setAttribute("aria-expanded", "false"); });
+  card.classList.toggle("big", big);
+  card.setAttribute("aria-expanded", String(big));
+  if (big) card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  drawCharts();
+}
+
+function openChart(c) {
+  showTab("charts");
+  const card = $("charts").querySelector(`.chart[data-c="${c}"]`);
+  if (card) toggleChart(card, true);
+}
+
+function drawCharts() {
+  const now = Date.now(), windowMs = st.cfg.window * 60000;
+  if (visible("live")) {
+    for (const cv of $("tiles").querySelectorAll("canvas.spark")) {
+      const c = cv.parentElement.id.slice(1);
+      draw(cv, seriesOf(c), { now, windowMs, gapMs: gapOf(c) });
+    }
+  }
+  if (!visible("charts")) return;
+  for (const card of $("charts").querySelectorAll(".chart")) {
+    const c = card.dataset.c, unit = unitOf(c), s = seriesOf(c);
+    s.trim(now - 30 * 60000);
+    const big = card.classList.contains("big");
+    draw(card.querySelector("canvas"), s, { now, windowMs, big, gapMs: gapOf(c), fmtY: (y) => fmtDisp(y, unit) });
+    const pts = s.since(now - windowMs).v;
+    const last = pts.at(-1);
+    card.querySelector(".cv").textContent = last == null ? "—" : `${fmtDisp(last, unit)} ${dispUnit(unit)}`;
+    card.querySelector(".ch-foot").textContent = !pts.length ? (isSupported(c) ? "no data" : "not supported")
+      : `min ${fmtDisp(Math.min(...pts), unit)} · max ${fmtDisp(Math.max(...pts), unit)}${big ? ` · ${pts.length} pts` : ""}`;
+  }
+}
+
+// ---------------------------------------------------------------- settings tab
+
+function fillSelect(sel, choices, value, label) {
+  sel.innerHTML = "";
+  for (const v of choices) {
+    const o = document.createElement("option");
+    o.value = String(v); o.textContent = label(v); o.selected = v === value;
+    sel.append(o);
+  }
+}
+
+function renderSettings() {
+  const cfg = st.cfg;
+  fillSelect($("set-log"), settings.LOG_CHOICES, cfg.logEvery, (v) => `${v / 1000} s`);
+  $("set-deadband").checked = cfg.deadband;
+  fillSelect($("set-window"), settings.WINDOW_CHOICES, cfg.window, (v) => `${v} min`);
+  const tb = $("set-pids");
+  tb.innerHTML = "";
+  for (const p of settings.PID_OPTIONS) {
+    const pc = cfg.pids[p.c];
+    const tr = document.createElement("tr");
+    const sup = isSupported(p.c);
+    tr.className = pc.on ? "" : "off";
+    tr.innerHTML = `<td><label class="chk"><input type="checkbox"><span></span></label></td>
+      <td><select aria-label="poll interval"></select></td><td class="muted small"></td>`;
+    const cb = tr.querySelector("input");
+    cb.checked = pc.on; cb.disabled = p.c === "010C";
+    tr.querySelector("label span").textContent = p.label;
+    tr.querySelector("td.small").textContent = p.c === "010C" ? "required" : sup ? p.c : "not supported";
+    const sel = tr.querySelector("select");
+    fillSelect(sel, settings.EVERY_CHOICES, pc.every, (v) => (v === 0 ? "every cycle" : `every ${v / 1000} s`));
+    sel.disabled = !pc.on;
+    cb.onchange = () => { pc.on = cb.checked; applySettings(); };
+    sel.onchange = () => { pc.every = Number(sel.value); applySettings(); };
+    tb.append(tr);
+  }
+  const n = settings.enabled(cfg).length;
+  $("set-est").textContent = `${n} values · log ≈ ${settings.estimateKbPerHour(cfg)} KB per hour of recording`;
+  $("rec-note").textContent = `Recording: a sample line every ${cfg.logEvery / 1000} s`
+    + `${cfg.deadband ? " (plus on sudden jumps)" : ""}, only values polled since the last line; `
+    + `DTCs and misfires every ${DTC_POLL_MS / 1000} s. Saved on this device immediately.`;
+}
+
+function applySettings() {
+  st.cfg = settings.normalize(st.cfg);
+  settings.save(st.cfg);
+  renderSettings();
+  buildTiles();
+  for (const c of settings.enabled(st.cfg)) {
+    if (st.latest[c] != null) showTile(c, st.latest[c], unitOf(c));
+  }
+  buildCharts();
+  if (st.recording) st.j.w("CFG", settings.describe(st.cfg));
+}
+
+$("set-log").onchange = (e) => { st.cfg.logEvery = Number(e.target.value); applySettings(); };
+$("set-deadband").onchange = (e) => { st.cfg.deadband = e.target.checked; applySettings(); };
+$("set-window").onchange = (e) => { st.cfg.window = Number(e.target.value); applySettings(); };
+$("chart-window").onchange = (e) => { st.cfg.window = Number(e.target.value); applySettings(); syncWindow(); };
+$("set-reset").onclick = () => { if (confirm("Reset settings to defaults?")) { st.cfg = settings.defaults(); applySettings(); syncWindow(); } };
+function syncWindow() { fillSelect($("chart-window"), settings.WINDOW_CHOICES, st.cfg.window, (v) => `${v} min`); }
+
 // ---------------------------------------------------------------- wiring
 function renderCaps() {
   $("caps").innerHTML = "";
@@ -370,13 +530,18 @@ function renderCaps() {
   $("caps").append(li);
 }
 
-document.querySelectorAll(".tabs button").forEach((b) => {
-  b.onclick = () => {
-    document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
-    document.querySelectorAll(".tab").forEach((t) => (t.hidden = t.id !== "tab-" + b.dataset.tab));
-    if (b.dataset.tab === "logs") renderLogs();
-  };
-});
+function showTab(name) {
+  document.querySelectorAll(".tabs button").forEach((x) => {
+    x.classList.toggle("on", x.dataset.tab === name);
+    x.setAttribute("aria-selected", String(x.dataset.tab === name));
+  });
+  document.querySelectorAll(".tab").forEach((t) => (t.hidden = t.id !== "tab-" + name));
+  if (name === "logs") renderLogs();
+  if (name === "charts") syncWindow();
+  drawCharts();
+  try { history.replaceState(null, "", "#" + name); } catch { /* ignore */ }
+}
+document.querySelectorAll(".tabs button").forEach((b) => { b.onclick = () => showTab(b.dataset.tab); });
 $("connect").onclick = () => connect(false);
 $("demo").onclick = () => connect(true);
 $("disconnect").onclick = () => teardown();
@@ -386,4 +551,12 @@ $("ver").textContent = VERSION;
 
 showBanner();
 renderCaps();
+renderSettings();
 buildTiles();
+buildCharts();
+setInterval(drawCharts, 1000);
+window.addEventListener("resize", () => drawCharts());
+{
+  const t = location.hash.slice(1);
+  if (document.querySelector(`.tabs button[data-tab="${t}"]`)) showTab(t);
+}

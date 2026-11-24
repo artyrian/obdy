@@ -19,16 +19,20 @@ npm test                      # core tests (node --test), no dependencies
 
 ## Features (0.1.0-alpha)
 
-- Live: RPM, coolant, fuel rail pressure, STFT/LTFT, lambda, load, voltage; poll rate.
-- Recording: ~1 line/s (more on change), DTCs and per-cylinder misfires every 20 s,
-  freeze frame on new DTC, Wake Lock keeps the screen on.
+- Live: RPM, coolant, fuel rail pressure, STFT/LTFT, lambda, load, voltage (+ optional MAP, MAF, timing…), sparkline per tile.
+- Charts: mini chart for every value, tap to expand (2–30 min window); breaks show gaps.
+- Settings: on/off and poll interval per value, log line interval, jump lines; log size estimate. Saved in the browser.
+- Recording: a line every 1 s by default with only values polled since the previous line (slow values appear
+  as often as they're polled), extra lines on RPM/rail/throttle/load/speed jumps,
+  DTCs and per-cylinder misfires every 20 s, freeze frame on new DTC, Wake Lock keeps the screen on.
 - DTCs: modes 03/07/0A, freeze frame, Mode 06 misfires per cylinder.
 - Logs go to IndexedDB immediately; export: Share / Download / Copy.
 
 ## Log format
 
 `<date> <time.ms> <TAG> key=value ...`, same as `tools/obd_tui.py`.
-Tags: SESSION CONN ELM KEYS S STEP DTC DTC_NEW FF MISFIRE ANOM BATT LOG.
+Tags: SESSION CONN ELM KEYS CFG S STEP DTC DTC_NEW FF MISFIRE ANOM BATT LOG.
+`CFG` records poll settings (ms per PID) at record start and on every change.
 
 ```sh
 grep -E " (DTC_NEW|ANOM|MISFIRE) " obd_*.log
@@ -40,7 +44,8 @@ grep -E " (DTC_NEW|ANOM|MISFIRE) " obd_*.log
 index.html
 favicon.svg/.ico · apple-touch-icon.png
 src/app.js              UI
-src/core/               pids.js (decoders) · elm.js (protocol) · journal.js
+src/core/               pids.js (decoders) · elm.js (protocol) · journal.js · settings.js (poll schedule)
+src/ui/                 style.css · chart.js (canvas charts)
 src/transport/          ble.js (Web Bluetooth) · fake.js (demo)
 tests/                  node --test
 tools/obd_tui.py        Python TUI (dev tool: DID scans, diff)
