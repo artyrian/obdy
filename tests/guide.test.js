@@ -12,7 +12,8 @@ test("presets: quick ⊂ standard ⊂ full by step ids", () => {
   const ids = (p) => PRESETS[p].steps().map((s) => s.id);
   assert.deepEqual(ids("quick"), ["koeo", "start"]);
   assert.deepEqual(ids("standard"), ["koeo", "offon", "start", "warm", "idle"]);
-  assert.equal(ids("full").at(-1), "drive");
+  assert.deepEqual(ids("full"), [...ids("standard").slice(0, 4), "hold", "snap", "idle"]);
+  assert.deepEqual(ids("drive"), ["drive"]);
 });
 
 test("quick: koeo needs ignition, then start counts running time", () => {
@@ -51,8 +52,7 @@ test("snaps counted on rising edges only", () => {
 });
 
 test("drive is manual; stats collected per step", () => {
-  const run = newRun("full", 0);
-  while (active(run).id !== "drive") advance(run, 0, "skipped");
+  const run = newRun("drive", 0);
   const r = run1(run, 0, 700000, 1000, () => ({ "010C": 2000, "010D": 100, "0123": 9000 }));
   assert.equal(r.ok, false);
   assert.equal(run.stats.drive["0123"].max, 9000);

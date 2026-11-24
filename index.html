@@ -3,7 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111418">
+  <meta name="theme-color" content="#f3f4f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="description" content="In-browser OBD-II scanner for BLE ELM327 adapters">
+  <script>
+    // apply the saved theme before first paint (no flash)
+    try { const t = localStorage.getItem("obdy.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+  </script>
   <title>obdy</title>
   <link rel="icon" href="favicon.ico" sizes="any">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -12,8 +20,8 @@
 </head>
 <body>
   <header>
-    <div class="title">obdy <span id="ver" class="muted"></span></div>
-    <div class="status"><span id="status">not connected</span> <span id="batt" class="pill">🔋 —</span></div>
+    <div class="title"><img src="favicon.svg" alt="">obdy <span id="ver" class="ver"></span></div>
+    <div class="status"><span class="dot" id="dot"></span><span id="status">Not connected</span> <span id="batt" class="pill">🔋 —</span></div>
   </header>
 
   <div id="banner" class="banner" hidden></div>
@@ -27,7 +35,7 @@
     <div class="small">Full log: Info → Log. Send it if the problem persists.</div>
   </div>
 
-  <section class="bar">
+  <section class="bar actions">
     <button id="connect" class="primary">Connect adapter</button>
     <button id="demo">Demo</button>
     <button id="rec" class="rec" hidden>● Record</button>
@@ -35,11 +43,11 @@
   </section>
 
   <nav class="tabs" role="tablist">
-    <button data-tab="live" class="on" role="tab" aria-selected="true">Live</button>
-    <button data-tab="diag" role="tab">Test</button>
-    <button data-tab="logs" role="tab">Logs</button>
-    <button data-tab="settings" role="tab">Settings</button>
-    <button data-tab="info" role="tab">Info</button>
+    <button data-tab="live" role="tab" class="on" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15a8 8 0 1 1 16 0"/><path d="M12 15l4-5"/><circle cx="12" cy="15" r="1.4" fill="currentColor"/></svg><span>Live</span></button>
+    <button data-tab="diag" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg><span>Test</span></button>
+    <button data-tab="logs" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg><span>Logs</span></button>
+    <button data-tab="settings" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Settings</span></button>
+    <button data-tab="info" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg><span>Info</span></button>
   </nav>
 
   <main>
@@ -49,7 +57,7 @@
         <label class="inline small">Chart <select id="chart-window" aria-label="chart window"></select></label>
       </div>
       <div id="tiles" class="tiles"></div>
-      <p class="muted small">Tap a tile to expand its chart. Top right: actual poll period. Green band / <i>ref</i>: normal range for the current state (engine running, warm, idle); dashed line on Lambda: commanded λ.</p>
+      <p class="muted small hint">Tap a tile to expand its chart. Top right: actual poll period. Green band / <i>ref</i>: normal range for the current state (engine running, warm, idle); dashed line on Lambda: commanded λ.</p>
       <p id="rec-note" class="muted small"></p>
     </section>
 
@@ -84,6 +92,14 @@
 
     <section id="tab-settings" class="tab" hidden>
       <div class="card">
+        <h4>Appearance</h4>
+        <div class="seg" id="theme" role="radiogroup" aria-label="Theme">
+          <button type="button" data-theme="auto" role="radio">Auto</button>
+          <button type="button" data-theme="light" role="radio">Light</button>
+          <button type="button" data-theme="dark" role="radio">Dark</button>
+        </div>
+      </div>
+      <div class="card">
         <h4>Log</h4>
         <div class="form">
           <label class="inline">Sample line every <select id="set-log"></select></label>
@@ -104,10 +120,16 @@
     </section>
 
     <section id="tab-info" class="tab" hidden>
-      <h3>Browser support</h3>
-      <ul id="caps" class="caps"></ul>
-      <h3>Log</h3>
-      <pre id="log" class="log"></pre>
+      <div class="card">
+        <h4>About</h4>
+        <p class="small" style="margin:0 0 6px">Built and tested on a <b>Ford Mustang 2.3 EcoBoost</b> with a UniCarScan UCSI-2100 (BLE ELM327).
+          Standard OBD-II (live PIDs, DTCs, freeze frame) should work on most 2008+ cars with CAN.</p>
+        <p class="small muted" style="margin:0">Ford-tuned parts may not fit other cars: Mode 06 misfire MIDs, normal ranges
+          (<i>ref</i>), guided-test thresholds and the P008A notes. Not a replacement for a professional scan tool.</p>
+      </div>
+      <div class="card"><h4>Browser support</h4><ul id="caps" class="caps"></ul></div>
+      <div class="card"><h4>App log</h4><pre id="log" class="log"></pre></div>
+      <p class="muted small">obdy · <a href="https://github.com/artyrian/obdy" target="_blank" rel="noopener">source</a></p>
     </section>
   </main>
 

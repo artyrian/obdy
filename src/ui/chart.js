@@ -73,7 +73,7 @@ export function draw(canvas, s, { now, windowMs: windowMs0, big = false, gapMs =
   if (band) {
     const y1 = Math.max(T, Math.min(T + ph, Y(band[1]))), y2 = Math.max(T, Math.min(T + ph, Y(band[0])));
     if (y2 > y1) {
-      g.fillStyle = css("--ok", canvas); g.globalAlpha = 0.12;
+      g.fillStyle = css("--ok", canvas); g.globalAlpha = 0.14;
       g.fillRect(L, y1, pw, y2 - y1); g.globalAlpha = 1;
     }
   }
@@ -109,7 +109,7 @@ export function draw(canvas, s, { now, windowMs: windowMs0, big = false, gapMs =
     if (!i || gap) g.moveTo(X(t[i]), Y(v[i])); else g.lineTo(X(t[i]), Y(v[i]));
   }
   g.stroke();
-  if (v.length < 60) { // sparse data: dots make single samples visible
+  if (v.length < (big ? 60 : 12)) { // sparse data: dots make single samples visible
     g.fillStyle = accent;
     for (let i = 0; i < v.length; i++) { g.beginPath(); g.arc(X(t[i]), Y(v[i]), big ? 2.2 : 1.4, 0, 7); g.fill(); }
   }

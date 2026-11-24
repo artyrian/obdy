@@ -1,6 +1,10 @@
 # obdy
 
-In-browser OBD-II scanner for BLE ELM327 adapters (tested with UniCarScan UCSI-2100 on a Ford Mustang 2.3 EcoBoost).
+In-browser OBD-II scanner for BLE ELM327 adapters.
+
+> **Built for Ford.** Developed and tested on a Ford Mustang 2.3 EcoBoost with a UniCarScan UCSI-2100.
+> Standard OBD-II (live PIDs, DTCs, freeze frame) should work on most 2008+ CAN cars; Ford-tuned parts
+> (Mode 06 misfire MIDs, normal ranges, guided-test thresholds) may not fit other makes.
 Client only: static files, no server, no build step.
 
 **▶ https://artyrian.github.io/obdy/**
@@ -32,7 +36,7 @@ npm test                      # core tests (node --test), no dependencies
 
 "Demo" works without an adapter.
 
-## Features (0.1.0-alpha)
+## Features (0.2.0-alpha)
 
 - Live: RPM, coolant, fuel rail pressure, STFT/LTFT, lambda, load, voltage (+ optional MAP, MAF, timing…).
   Each tile: value, sparkline, actual poll period; tap expands a full chart in place (2–30 min window).
@@ -47,11 +51,13 @@ npm test                      # core tests (node --test), no dependencies
   stays visible on every tab. Presets:
   - **Quick** (~2 min): ignition on 15 s → start + 60 s idle.
   - **Standard** (~10 min, cold start): ignition 30 s → off/on (second prime) → start + 90 s → warm-up to 80 °C → 60 s idle.
-  - **Full** (~25 min): Standard + 2500 rpm hold, 3 throttle snaps, idle, 10–15 min drive.
+  - **Full** (~13 min): Standard + 2500 rpm hold, 3 throttle snaps, warm idle.
+  - **Drive** (any length): records a drive with DTCs/misfires before and after; Finish when back.
 
   Before/after DTCs and misfire counters, `STEP`/`RESULT` lines, per-step `STAT` (min/mean/max), `phase=` on S lines;
   snap/off-on/drive steps poll only the fast set (RPM, rail, trims, lambda, load, throttle).
 - DTCs: modes 03/07/0A, freeze frame, Mode 06 misfires per cylinder.
+- Light/dark theme (Auto follows the system; Settings → Appearance). On phones the tabs move to a bottom bar.
 - Logs go to IndexedDB immediately; export: Share / Download / Copy.
 
 ## Log format

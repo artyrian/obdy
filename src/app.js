@@ -8,7 +8,7 @@ import { refFor, status as refStatus } from "./core/refs.js";
 import * as guide from "./core/guide.js";
 import { Series, draw, rateLabel } from "./ui/chart.js";
 
-const VERSION = "0.1.0-alpha"; // keep in sync with package.json (checked by tests)
+const VERSION = "0.2.0-alpha"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
 // write an extra S line when one of these moved by at least this much
@@ -73,8 +73,23 @@ function log(msg) {
 function toast(msg) { log(msg); $("status").textContent = msg; setTimeout(updateStatus, 2500); }
 
 function updateStatus() {
-  $("status").textContent = st.elm ? `● ${st.transport.name}${st.recording ? " · recording" : ""}` : "not connected";
+  $("status").textContent = st.elm ? `${st.transport.name}${st.recording ? " · Recording" : ""}` : st.connecting ? $("status").textContent : "Not connected";
+  $("dot").className = "dot" + (st.elm ? (st.recording ? " rec" : " on") : "");
 }
+
+// ---------------------------------------------------------------- theme
+function applyTheme(t) {
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  try { localStorage.setItem("obdy.theme", t); } catch { /* ignore */ }
+  document.querySelectorAll("#theme button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.theme === t);
+    b.setAttribute("aria-checked", String(b.dataset.theme === t));
+  });
+  requestAnimationFrame(() => drawCharts());
+}
+document.querySelectorAll("#theme button").forEach((b) => (b.onclick = () => applyTheme(b.dataset.theme)));
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => drawCharts());
 
 function setConnected(on) {
   $("connect").hidden = on; $("demo").hidden = on; $("disconnect").hidden = !on;
@@ -190,7 +205,7 @@ async function connect(demo) {
     if (!st.j) preLog.length = 0;
     try { await st.transport?.close(); } catch { /* ignore */ }
     st.elm = st.transport = null;
-    $("status").textContent = "not connected";
+    $("status").textContent = "Not connected";
     if (!cancelled) showError(`Connection failed: ${e.message}`);
   } finally {
     st.connecting = false;
@@ -767,6 +782,7 @@ showBanner();
 renderCaps();
 renderSettings();
 renderPresets();
+{ let t = "auto"; try { t = localStorage.getItem("obdy.theme") || "auto"; } catch { /* ignore */ } applyTheme(t); }
 buildTiles();
 syncWindow();
 setInterval(drawCharts, 1000);

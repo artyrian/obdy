@@ -77,8 +77,8 @@ const idle = (sec) => ({
 });
 
 const drive = () => ({
-  id: "drive", title: "Drive 10–15 min", fast: true, manual: true,
-  text: "Normal driving + 2–3 pulls to 4000 rpm (load — this is where P008A shows). Press Finish when back; keep the engine running.",
+  id: "drive", title: "Drive", fast: true, manual: true,
+  text: "Normal driving + 2–3 pulls to 4000 rpm (load — this is where P008A shows). 10–15 min is plenty. Press Finish when back, engine still running.",
   check: (c) => {
     c.acc.vmax = Math.max(c.acc.vmax || 0, c.spd || 0);
     c.acc.rmax = Math.max(c.acc.rmax || 0, c.rpm || 0);
@@ -90,8 +90,10 @@ export const PRESETS = {
   quick: { label: "Quick", time: "~2 min", desc: "Ignition, start, 1 min idle. Everyday check.", steps: () => [koeo(15), start(60)] },
   standard: { label: "Standard", time: "~10 min", desc: "Cold start: two fuel primes, start, warm-up, warm idle.",
     steps: () => [koeo(30), offon(), start(90), warm(), idle(60)] },
-  full: { label: "Full", time: "~25 min", desc: "Standard + 2500 rpm hold, throttle snaps, idle and a drive.",
-    steps: () => [koeo(30), offon(), start(90), warm(), hold(), snap(), idle(60), drive()] },
+  full: { label: "Full", time: "~13 min", desc: "Standard + 2500 rpm hold and throttle snaps, then warm idle.",
+    steps: () => [koeo(30), offon(), start(90), warm(), hold(), snap(), idle(60)] },
+  drive: { label: "Drive", time: "any length", desc: "Record a drive with DTCs before/after. Finish when you're back.",
+    steps: () => [drive()] },
 };
 
 export const FAST = new Set(["010C", "0123", "0106", "0134", "0104", "0111"]);
