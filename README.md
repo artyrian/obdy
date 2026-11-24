@@ -6,9 +6,10 @@ No app to install, no account, all data stays on your phone.
 
 **[▶ Open obdy](https://artyrian.github.io/obdy/)** · try **Demo** without a car
 
-| Live data | Guided test |
-|:---:|:---:|
-| <img src="docs/screenshots/live-light.png" width="200" alt="Live data, light theme"> <img src="docs/screenshots/live-dark.png" width="200" alt="Live data, dark theme"> | <img src="docs/screenshots/test-light.png" width="200" alt="Guided test, light theme"> <img src="docs/screenshots/test-dark.png" width="200" alt="Guided test, dark theme"> |
+<p align="center">
+  <img src="docs/screenshots/preview.png" alt="obdy: live data and a guided test, light and dark themes">
+  <br><sub>Live data with a chart and its normal range · guided test step by step · light and dark themes</sub>
+</p>
 
 ## What it does
 
