@@ -1,4 +1,4 @@
-# odb_scanner
+# obdy
 
 OBD-II сканер в браузере для BLE-адаптеров ELM327 (проверен под UniCarScan UCSI-2100), Ford Mustang 2.3 EcoBoost.
 Только клиент: статика, без сервера и сборки.
@@ -15,7 +15,7 @@ npm test                      # тесты ядра (node --test), зависи�
 
 «Демо» работает без адаптера.
 
-## Что умеет (0.1-spike)
+## Что умеет (0.1.0-alpha)
 
 - Live: обороты, температура, давление в рампе, STFT/LTFT, лямбда, нагрузка, напряжение; скорость опроса.
 - Запись: журнал ~1 строка/с (чаще при изменениях), ошибки и пропуски по цилиндрам каждые 20 с,
@@ -36,6 +36,7 @@ grep -E " (DTC_NEW|ANOM|MISFIRE) " obd_*.log
 
 ```
 index.html
+favicon.svg/.ico · apple-touch-icon.png
 src/app.js              UI
 src/core/               pids.js (декодеры) · elm.js (протокол) · journal.js
 src/transport/          ble.js (Web Bluetooth) · fake.js (демо)
@@ -46,4 +47,7 @@ docs/PLAN.md
 
 ## Деплой
 
-GitHub Pages через `.github/workflows/pages.yml` (Settings → Pages → Source: GitHub Actions).
+https://artyrian.github.io/obdy/ — деплой на каждый push в `main` через `.github/workflows/pages.yml`
+(тесты → Pages). Разово: Settings → Pages → Source: **GitHub Actions**.
+
+Версия: `VERSION` в `src/app.js` = `version` в `package.json` (сверяет тест).

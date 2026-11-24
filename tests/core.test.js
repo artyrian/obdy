@@ -54,3 +54,10 @@ test("Elm over fake transport", async () => {
   assert.equal(mis.cyl2.cycle, 34);
   assert.ok((await elm.voltage()) > 11);
 });
+
+test("app VERSION matches package.json", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+  assert.equal(app.match(/const VERSION = "([^"]+)"/)[1], pkg.version);
+});

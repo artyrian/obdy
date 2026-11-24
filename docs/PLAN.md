@@ -1,4 +1,4 @@
-# odb_scanner — план
+# obdy — план
 
 Свой OBD-сканер для Mustang 2.3 EcoBoost через BLE-адаптер UniCarScan UCSI-2100 (ELM327, сервис FFF0).
 Прототип: `obd_tui.py` (Python + Textual + bleak) — остаётся как dev-инструмент.
@@ -34,7 +34,7 @@ docs/         PLAN.md  JOURNAL_FORMAT.md
 1. **Core на TS** — порт из Python: декодеры PID, DTC 03/07/0A, freeze frame, Mode 06 пропуски, аномалии,
    сценарии. Тесты (vitest) на реальных журналах как фикстурах.
 2. **UI** — mobile-first: крупные кнопки, карточка шага, живые графики (uPlot), батарея, список журналов.
-3. **Деплой** — GitHub Actions → GitHub Pages (`artyrian.github.io/odb_scanner`).
+3. **Деплой** — GitHub Actions → GitHub Pages (`artyrian.github.io/obdy`).
 4. **Потом** (если понадобится) — автовыгрузка журнала на сервер — профили по машинам, найденные Ford DID, разбор журнала прямо в приложении.
 
 ## Открытые вопросы

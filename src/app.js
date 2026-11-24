@@ -4,7 +4,7 @@ import { Journal, listSessions, sessionText, deleteSession } from "./core/journa
 import { BleTransport, bleAvailable } from "./transport/ble.js";
 import { FakeTransport } from "./transport/fake.js";
 
-const VERSION = "0.1-spike";
+const VERSION = "0.1.0-alpha"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
 // live set: key params, ~8–11 cmds -> ~1 sample/s over BLE
