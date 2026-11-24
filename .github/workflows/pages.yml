@@ -19,15 +19,20 @@ jobs:
         with:
           node-version: 22
       - run: npm test
-  deploy:
+  build:
     needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir _site && cp -r index.html src favicon.ico favicon.svg apple-touch-icon.png _site/
+      - uses: actions/upload-pages-artifact@v3
+  # separate job: deploying in the same job as the upload sometimes can't see the artifact yet
+  deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - run: mkdir _site && cp -r index.html src favicon.ico favicon.svg apple-touch-icon.png _site/
-      - uses: actions/upload-pages-artifact@v3
       - id: deployment
         uses: actions/deploy-pages@v4
