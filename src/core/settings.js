@@ -35,6 +35,7 @@ export function defaults() {
     v: 1,
     logEvery: 1000,   // min ms between S lines (deadband can add extra lines)
     deadband: true,   // extra S line when a fast value jumps
+    autoRecord: true, // start recording as soon as the adapter is connected
     window: 5,        // chart window, minutes
     pids: Object.fromEntries(PID_OPTIONS.map((p) => [p.c, { on: p.on, every: p.every }])),
   };
@@ -46,6 +47,7 @@ export function normalize(raw) {
   if (!raw || typeof raw !== "object") return d;
   if (LOG_CHOICES.includes(raw.logEvery)) d.logEvery = raw.logEvery;
   if (typeof raw.deadband === "boolean") d.deadband = raw.deadband;
+  if (typeof raw.autoRecord === "boolean") d.autoRecord = raw.autoRecord;
   if (WINDOW_CHOICES.includes(raw.window)) d.window = raw.window;
   for (const c of Object.keys(d.pids)) {
     const p = raw.pids?.[c];

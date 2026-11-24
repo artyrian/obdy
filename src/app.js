@@ -61,10 +61,12 @@ function showBanner() {
 }
 
 // ---------------------------------------------------------------- log / ui helpers
+const preLog = []; // lines logged before the journal exists (BLE connect steps) — flushed into it
 function log(msg) {
   const el = $("log");
   el.textContent = `${new Date().toLocaleTimeString()}  ${msg}\n` + el.textContent.slice(0, 20000);
-  st.j?.w("LOG", { msg });
+  if (st.j) st.j.w("LOG", { msg });
+  else preLog.push(msg) > 50 && preLog.shift();
 }
 
 function toast(msg) { log(msg); $("status").textContent = msg; setTimeout(updateStatus, 2500); }
@@ -161,7 +163,8 @@ async function connect(demo) {
     st.transport = tr;
     st.elm = new Elm(tr);
     st.j = new Journal(Journal.newId());
-    await st.j.start({ app: VERSION, adapter: tr.name, demo: !!demo, ua: navigator.userAgent.slice(0, 120) });
+    await st.j.start({ app: VERSION, adapter: tr.name, demo: !!demo, ua: navigator.userAgent.slice(0, 220) });
+    for (const msg of preLog.splice(0)) st.j.w("LOG", { msg });
     st.j.w("CONN", { event: "connected", name: tr.name, service: tr.service || "-" });
     step("initialising ELM327…");
     const { ati, probe } = await st.elm.init(log);
@@ -174,13 +177,15 @@ async function connect(demo) {
     } else st.supported = null;
     renderSettings();
     setConnected(true);
-    st.minmax = {}; st.lastPoll = {}; st.latest = {}; st.unwritten = {};
+    st.minmax = {}; st.lastPoll = {}; st.latest = {}; st.unwritten = {}; st.alive = undefined;
     buildTiles();
     pollLoop();
+    if (st.cfg.autoRecord) await startRecording();
   } catch (e) {
     const cancelled = e.name === "NotFoundError" && /cancel/i.test(e.message);
     log(`connect failed: ${e.name}: ${e.message}`);
     st.j?.w("CONN", { event: "failed", err: e.message });
+    if (!st.j) preLog.length = 0;
     try { await st.transport?.close(); } catch { /* ignore */ }
     st.elm = st.transport = null;
     $("status").textContent = "not connected";
@@ -247,9 +252,12 @@ async function pollLoop() {
       $("rate").textContent = `${(n / dt).toFixed(1)} cmd/s · ${st.elm.rate.toFixed(0)} ms/cmd`;
       n = 0; tRate = performance.now();
     }
+    const lost = !alive && st.alive !== false; // log the ECU going silent once, not every second
+    st.alive = alive;
+    if (alive) delete st.unwritten.ecu;
     if (st.recording) {
       const jump = st.cfg.deadband && now - st.lastW >= DEADBAND_MIN_MS && moved(st.lastVals, st.unwritten);
-      if (now - st.lastW >= st.cfg.logEvery || jump || !alive) {
+      if (alive ? now - st.lastW >= st.cfg.logEvery || jump : lost) {
         st.j.sample(st.unwritten, { sess: st.sess, t: ((now - st.t0) / 1000).toFixed(2) });
         st.lastW = now; st.lastVals = { ...st.lastVals, ...st.unwritten }; st.unwritten = {};
       }
@@ -486,6 +494,7 @@ function renderSettings() {
   const cfg = st.cfg;
   fillSelect($("set-log"), settings.LOG_CHOICES, cfg.logEvery, (v) => `${v / 1000} s`);
   $("set-deadband").checked = cfg.deadband;
+  $("set-autorec").checked = cfg.autoRecord;
   fillSelect($("set-window"), settings.WINDOW_CHOICES, cfg.window, (v) => `${v} min`);
   const tb = $("set-pids");
   tb.innerHTML = "";
@@ -528,6 +537,7 @@ function applySettings() {
 
 $("set-log").onchange = (e) => { st.cfg.logEvery = Number(e.target.value); applySettings(); };
 $("set-deadband").onchange = (e) => { st.cfg.deadband = e.target.checked; applySettings(); };
+$("set-autorec").onchange = (e) => { st.cfg.autoRecord = e.target.checked; applySettings(); };
 $("set-window").onchange = (e) => { st.cfg.window = Number(e.target.value); applySettings(); };
 $("chart-window").onchange = (e) => { st.cfg.window = Number(e.target.value); applySettings(); };
 $("set-reset").onclick = () => { if (confirm("Reset settings to defaults?")) { st.cfg = settings.defaults(); applySettings(); } };
