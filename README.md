@@ -36,7 +36,7 @@ npm test                      # core tests (node --test), no dependencies
 
 "Demo" works without an adapter.
 
-## Features (0.2.0-alpha)
+## Features (0.2.1)
 
 - Live: RPM, coolant, fuel rail pressure, STFT/LTFT, lambda, load, voltage (+ optional MAP, MAF, timing…).
   Each tile: value, sparkline, actual poll period; tap expands a full chart in place (2–30 min window).

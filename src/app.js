@@ -8,7 +8,7 @@ import { refFor, status as refStatus } from "./core/refs.js";
 import * as guide from "./core/guide.js";
 import { Series, draw, rateLabel } from "./ui/chart.js";
 
-const VERSION = "0.2.0-alpha"; // keep in sync with package.json (checked by tests)
+const VERSION = "0.2.1"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
 // write an extra S line when one of these moved by at least this much
@@ -89,6 +89,9 @@ function applyTheme(t) {
   requestAnimationFrame(() => drawCharts());
 }
 document.querySelectorAll("#theme button").forEach((b) => (b.onclick = () => applyTheme(b.dataset.theme)));
+const isDark = () => document.documentElement.dataset.theme === "dark"
+  || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+$("theme-btn").onclick = () => applyTheme(isDark() ? "light" : "dark");
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => drawCharts());
 
 function setConnected(on) {
@@ -776,7 +779,7 @@ $("demo").onclick = () => connect(true);
 $("disconnect").onclick = () => teardown();
 $("rec").onclick = () => (st.recording ? stopRecording() : startRecording());
 $("read-diag").onclick = () => readDiag().catch((e) => log("error: " + e.message));
-$("ver").textContent = VERSION;
+$("ver").textContent = "v" + VERSION;
 
 showBanner();
 renderCaps();

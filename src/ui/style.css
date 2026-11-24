@@ -155,7 +155,8 @@ tr:last-child td { border-bottom: 0; }
 .gbar .gb-text b, .gbar .gb-text span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gbar #gb-next { min-height: 38px; padding: 6px 14px; }
 .presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
-.preset { text-align: left; padding: 12px 14px; border-radius: var(--radius); display: block; width: 100%; background: var(--raised); font-weight: 400; }
+.preset { text-align: left; padding: 12px 14px; border-radius: var(--radius); width: 100%; background: var(--raised); font-weight: 400;
+  display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; }
 .preset .p-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 17px; }
 .preset .p-desc { margin: 2px 0 6px; color: var(--text); }
 .preset ol { margin: 4px 0 0; padding-left: 18px; }
@@ -197,4 +198,15 @@ table.pids tr.off .chk span { color: var(--muted); }
   table.pids td:nth-child(3) { display: none; }
   select { font-size: 16px; } /* no iOS zoom on focus */
   .livebar select { font-size: 16px; }
+}
+
+/* header theme toggle: shows the theme you'd switch to */
+.icon-btn { min-height: 34px; width: 34px; padding: 0; border-radius: 999px; display: inline-grid; place-items: center; flex: none; }
+.icon-btn svg { width: 18px; height: 18px; }
+.icon-btn .i-sun { display: none; }
+:root[data-theme="dark"] .icon-btn .i-sun { display: block; }
+:root[data-theme="dark"] .icon-btn .i-moon { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .icon-btn .i-sun { display: block; }
+  :root:not([data-theme="light"]) .icon-btn .i-moon { display: none; }
 }
