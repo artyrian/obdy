@@ -67,11 +67,12 @@ test("yRange pads flat lines", () => {
   assert.ok(lo < 14 && hi > 14);
 });
 
-test("rateLabel: Hz for fast, period for slow, empty when stale", () => {
-  const fast = Array.from({ length: 21 }, (_, i) => 100000 + i * 400); // 2.5 Hz
-  assert.equal(rateLabel(fast, 108000), "2.5 Hz");
+test("rateLabel: period in seconds, empty when stale", () => {
+  const fast = Array.from({ length: 21 }, (_, i) => 100000 + i * 140);
+  assert.equal(rateLabel(fast, 103000), "0.14 s");
   const slow = [100000, 105000, 110000, 115000]; // every 5 s
   assert.equal(rateLabel(slow, 115500), "5.0 s");
+  assert.equal(rateLabel([100000, 110000, 120000], 120500), "10 s");
   assert.equal(rateLabel([100000], 100500), "");
   assert.equal(rateLabel(slow, 300000), "");
 });

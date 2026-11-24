@@ -20,7 +20,10 @@ npm test                      # core tests (node --test), no dependencies
 ## Features (0.1.0-alpha)
 
 - Live: RPM, coolant, fuel rail pressure, STFT/LTFT, lambda, load, voltage (+ optional MAP, MAF, timing…).
-  Each tile: value, sparkline, actual poll rate (Hz or period); tap expands a full chart in place (2–30 min window).
+  Each tile: value, sparkline, actual poll period; tap expands a full chart in place (2–30 min window).
+- Reference ranges (green band, `ref` line, value turns orange/red), context-aware: battery charging vs engine off,
+  coolant warm, fuel trims ±10 %, lambda vs commanded λ (dashed line), warm-idle RPM, baro, catalyst.
+  A value going out of the "bad" range while recording writes an `ANOM rule=ref_<PID>` line.
 - Settings: on/off and poll interval per value, log line interval, jump lines; log size estimate. Saved in the browser.
 - Recording: a line every 1 s by default with only values polled since the previous line (slow values appear
   as often as they're polled), extra lines on RPM/rail/throttle/load/speed jumps,

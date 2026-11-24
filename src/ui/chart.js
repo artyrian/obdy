@@ -39,7 +39,7 @@ const css = (name, el) => getComputedStyle(el).getPropertyValue(name).trim();
  * Draw series s over [now - windowMs, now] into canvas.
  * big: axes labels + grid. fmtY: value -> label.
  */
-export function draw(canvas, s, { now, windowMs: windowMs0, big = false, gapMs = 10000, fmtY = (x) => x.toFixed(1) }) {
+export function draw(canvas, s, { now, windowMs: windowMs0, big = false, gapMs = 10000, band = null, ref = null, fmtY = (x) => x.toFixed(1) }) {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth, h = canvas.clientHeight;
   if (!w || !h) return;
@@ -65,8 +65,18 @@ export function draw(canvas, s, { now, windowMs: windowMs0, big = false, gapMs =
     if (big) { g.fillStyle = muted; g.font = "12px -apple-system, sans-serif"; g.fillText("no data yet", L + 6, T + 16); }
     return;
   }
-  const [lo, hi] = yRange(v);
+  const refPts = ref ? ref.since(from) : { t: [], v: [] };
+  // expanded chart always shows the normal band; sparklines stay zoomed on the data
+  const [lo, hi] = yRange(big ? [...v, ...refPts.v, ...(band || [])] : v);
   const Y = (y) => T + ph - ((y - lo) / (hi - lo)) * ph;
+
+  if (band) {
+    const y1 = Math.max(T, Math.min(T + ph, Y(band[1]))), y2 = Math.max(T, Math.min(T + ph, Y(band[0])));
+    if (y2 > y1) {
+      g.fillStyle = css("--ok", canvas); g.globalAlpha = 0.12;
+      g.fillRect(L, y1, pw, y2 - y1); g.globalAlpha = 1;
+    }
+  }
 
   if (big) {
     g.strokeStyle = line; g.fillStyle = muted; g.lineWidth = 1;
@@ -85,6 +95,12 @@ export function draw(canvas, s, { now, windowMs: windowMs0, big = false, gapMs =
     }
   }
 
+  if (refPts.v.length) { // target line (e.g. commanded lambda), dashed
+    g.save(); g.strokeStyle = muted; g.lineWidth = 1.2; g.setLineDash([4, 3]); g.beginPath();
+    refPts.v.forEach((y, i) => (i ? g.lineTo(X(refPts.t[i]), Y(y)) : g.moveTo(X(refPts.t[i]), Y(y))));
+    g.stroke(); g.restore();
+  }
+
   g.strokeStyle = accent; g.lineWidth = big ? 1.6 : 1.3; g.lineJoin = "round";
   g.beginPath();
   // long gaps are drawn as breaks (disconnects, paused polling)
@@ -99,13 +115,13 @@ export function draw(canvas, s, { now, windowMs: windowMs0, big = false, gapMs =
   }
 }
 
-/** Actual poll rate from the last minute of samples: "2.4 Hz" or "5 s" (period). */
+/** Actual poll period from the last minute of samples: "0.14 s", "1.2 s", "10 s"; "" if stale. */
 export function rateLabel(t, now) {
   let i = t.length - 1;
   while (i > 0 && now - t[i - 1] <= 60000) i--;
   const n = t.length - 1 - i;
   if (n < 1 || now - t.at(-1) > 60000) return "";
-  const hz = (n * 1000) / (t.at(-1) - t[i]);
-  if (!Number.isFinite(hz)) return "";
-  return hz >= 0.95 ? `${hz.toFixed(hz >= 10 ? 0 : 1)} Hz` : `${(1 / hz).toFixed(1 / hz >= 10 ? 0 : 1)} s`;
+  const sec = (t.at(-1) - t[i]) / n / 1000;
+  if (!(sec > 0)) return "";
+  return `${sec.toFixed(sec < 1 ? 2 : sec < 10 ? 1 : 0)} s`;
 }

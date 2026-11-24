@@ -4,6 +4,7 @@ import { Journal, listSessions, sessionText, deleteSession } from "./core/journa
 import { BleTransport, bleAvailable } from "./transport/ble.js";
 import { FakeTransport } from "./transport/fake.js";
 import * as settings from "./core/settings.js";
+import { refFor, status as refStatus } from "./core/refs.js";
 import { Series, draw, rateLabel } from "./ui/chart.js";
 
 const VERSION = "0.1.0-alpha"; // keep in sync with package.json (checked by tests)
@@ -97,7 +98,7 @@ function buildTiles() {
     d.tabIndex = 0; d.setAttribute("role", "button"); d.setAttribute("aria-expanded", "false");
     d.innerHTML = `<div class="t-head"><span class="k"></span><span class="hz" title="actual poll rate"></span></div>
       <div class="t-val"><span class="v">—</span><span class="u"></span></div>
-      <canvas class="spark" aria-hidden="true"></canvas><div class="mm"></div>`;
+      <canvas class="spark" aria-hidden="true"></canvas><div class="mm"></div><div class="ref"></div>`;
     d.querySelector(".k").textContent = labelOf(c);
     d.onclick = () => toggleTile(c);
     d.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTile(c); } };
@@ -126,7 +127,18 @@ function showTile(c, v, unit) {
   }
   const t = $("t" + c);
   if (!t) return;
-  t.querySelector(".v").textContent = fmtDisp(dispVal(v, unit), unit);
+  const ve = t.querySelector(".v");
+  ve.textContent = fmtDisp(dispVal(v, unit), unit);
+  const stt = refStatus(c, v, st.latest);
+  ve.className = "v " + (stt || "");
+  if (stt === "bad" && st.refBad?.[c] !== "bad" && st.recording) { // log each excursion once
+    st.j.w("ANOM", { rule: `ref_${c}`, msg: `${labelOf(c)} ${fmtDisp(dispVal(v, unit), unit)} ${dispUnit(unit)} out of range` });
+    log(`⚠ ${labelOf(c)} ${fmtDisp(dispVal(v, unit), unit)} ${dispUnit(unit)} out of range`);
+  }
+  (st.refBad ??= {})[c] = stt;
+  const r = refFor(c, st.latest);
+  const f0 = (x) => fmtDisp(dispVal(x, unit), unit);
+  t.querySelector(".ref").textContent = r ? `ref ${f0(r.lo)}–${f0(r.hi)}${r.label ? " · " + r.label : ""}` : "";
   t.querySelector(".u").textContent = v == null ? "" : dispUnit(unit);
   if (st.minmax[c] && !t.classList.contains("big")) {
     const f = (x) => fmtDisp(dispVal(x, unit), unit);
@@ -425,7 +437,10 @@ function drawCharts() {
     s.trim(now - 30 * 60000);
     const big = t.classList.contains("big");
     t.querySelector(".hz").textContent = rateLabel(s.t, now);
-    draw(t.querySelector("canvas"), s, { now, windowMs, big, gapMs: gapOf(c), fmtY: (y) => fmtDisp(y, unit) });
+    const r = refFor(c, st.latest);
+    const band = r ? [dispVal(r.lo, unit), dispVal(r.hi, unit)] : null;
+    const ref = c === "0134" && st.cfg.pids["0144"]?.on ? seriesOf("0144") : null; // commanded lambda
+    draw(t.querySelector("canvas"), s, { now, windowMs, big, band, ref, gapMs: gapOf(c), fmtY: (y) => fmtDisp(y, unit) });
     if (big) {
       const pts = s.since(now - windowMs).v;
       t.querySelector(".mm").textContent = !pts.length ? (isSupported(c) ? "no data yet" : "not supported by this car")

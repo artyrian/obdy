@@ -96,3 +96,6 @@ table.pids tr.off .chk span { color: var(--muted); }
 }
 .rate { min-height: 18px; margin: 0 0 6px; font-variant-numeric: tabular-nums; }
 .tile .spark { display: block; width: 100%; height: 28px; margin: 2px 0; }
+.tile .ref { font-size: 11px; color: var(--muted); min-height: 0; font-variant-numeric: tabular-nums; }
+.tile .ref:empty { display: none; }
+.tile .v.warn { color: var(--warn); } .tile .v.bad { color: var(--bad); }
