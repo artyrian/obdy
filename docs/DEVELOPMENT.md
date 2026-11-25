@@ -19,14 +19,22 @@ app/assets/             icons
 app/src/app.js          UI wiring
 app/src/core/           pids.js (decoders) · elm.js (ELM327 protocol) · journal.js (IndexedDB log)
                         settings.js (poll schedule) · refs.js (normal ranges) · guide.js (guided tests)
-                        obdb.js (OBDb signal sets, VIN helpers)
+                        obdb.js (OBDb signal sets, VIN helpers) · report.js (log -> findings, text, AI prompt)
 app/profiles/           bundled OBDb profiles (Ford-Mustang, CC BY-SA 4.0) for offline use
-app/src/ui/             style.css (light/dark) · chart.js (canvas charts)
+app/src/ui/             style.css (light/dark, print) · chart.js (canvas charts) · report.js (report HTML, SVG charts)
 app/src/transport/      ble.js (Web Bluetooth) · fake.js (Demo)
 tests/                  unit tests for core modules
 tools/obd_tui.py        Python TUI (Mac, bleak): Ford DID scans, log diffing
 docs/screenshots/       README images
 ```
+
+## Report
+
+`core/report.js` rebuilds a report from any journal text (current session or a saved log):
+codes (OBD + UDS flags from `raw`), findings (out-of-range time per PID from `refs.js`, actual-vs-desired
+fuel pressure pairs, misfire growth, battery, warm-up, idle stability), per-key min/mean/max, steps.
+Verdict = worst of findings and codes (confirmed/stored = problem, pending = worth a look).
+`aiPrompt()` = prompt + compact Markdown; the app only copies it (and opens ChatGPT/Claude with `?q=`), it sends nothing.
 
 ## Deploy
 

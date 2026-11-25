@@ -8,8 +8,10 @@ import { refFor, status as refStatus } from "./core/refs.js";
 import * as guide from "./core/guide.js";
 import * as obdb from "./core/obdb.js";
 import { Series, draw, rateLabel } from "./ui/chart.js";
+import * as report from "./core/report.js";
+import { reportHtml } from "./ui/report.js";
 
-const VERSION = "0.3.2"; // keep in sync with package.json (checked by tests)
+const VERSION = "0.4.0"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
 // write an extra S line when one of these moved by at least this much
@@ -103,6 +105,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => dr
 function setConnected(on) {
   $("connect").hidden = on; $("demo").hidden = on; $("disconnect").hidden = !on;
   $("rec").hidden = !on; $("read-diag").disabled = !on;
+  document.querySelector(".logo").classList.toggle("live", on);
   updateStatus();
   updateGuideUI();
 }
@@ -705,7 +708,7 @@ async function renderLogs() {
     row.className = "card logrow";
     const d = new Date(s.started);
     row.innerHTML = `<div><b></b><div class="muted small"></div></div>
-      <div class="bar"><button data-a="share">Share</button><button data-a="download">Download</button>
+      <div class="bar"><button data-a="report" class="primary">Report</button><button data-a="share">Share</button><button data-a="download">Download</button>
       <button data-a="copy">Copy</button><button data-a="del">✕</button></div>`;
     row.querySelector("b").textContent = d.toLocaleString();
     row.querySelector(".small").textContent = `${s.adapter || ""}${s.demo ? " · demo" : ""} · ${s.id}`;
@@ -714,7 +717,8 @@ async function renderLogs() {
         if (b.dataset.a === "del") {
           if (st.j?.id === s.id) return toast("can't delete the active log");
           if (confirm("Delete log?")) { await deleteSession(s.id); renderLogs(); }
-        } else exportLog(s.id, b.dataset.a);
+        } else if (b.dataset.a === "report") openReport(s.id).catch((e) => log("report: " + e.message));
+        else exportLog(s.id, b.dataset.a);
       };
     });
     el.append(row);
@@ -728,6 +732,7 @@ const visible = (tab) => !$("tab-" + tab).hidden && document.visibilityState ===
 const gapOf = (c) => Math.max(10000, 3 * ((isExt(c) ? extCfg()[c]?.every : st.cfg.pids[c]?.every) || 0));
 
 function drawCharts() {
+  document.querySelector(".logo").classList.toggle("moving", !!st.elm && st.latest["010D"] > 0);
   if (!visible("live")) return;
   const now = Date.now(), windowMs = st.cfg.window * 60000;
   for (const t of $("tiles").querySelectorAll(".tile")) {
@@ -1055,11 +1060,12 @@ function renderGuideResult() {
     }
     h += `</table>`;
   } else h += `<p class="muted small">After-test snapshot skipped: ECU not answering (engine/ignition off).</p>`;
-  h += `<p class="muted small">Everything is in the current log (session ${esc(run.sess)}). Share it for review:</p>
-    <div class="bar"><button id="g-share" class="primary">Share log</button><button id="g-again">New test</button></div>`;
+  h += `<p class="muted small">Everything is in the current log (session ${esc(run.sess)}).</p>
+    <div class="bar"><button id="g-report" class="primary">View report</button><button id="g-share">Share log</button><button id="g-again">New test</button></div>`;
   el.innerHTML = h;
   el.hidden = false;
   $("g-share").onclick = () => exportLog(st.j?.id, "share").catch((e) => log("export: " + e.message));
+  $("g-report").onclick = () => openReport(st.j?.id).catch((e) => log("report: " + e.message));
   $("g-again").onclick = () => { st.lastGuide = null; renderGuideResult(); };
 }
 
@@ -1067,7 +1073,43 @@ $("g-next").onclick = guideNext;
 $("gb-next").onclick = guideNext;
 $("g-stop").onclick = () => { if (confirm("Stop the guided test?")) finishGuide(true); };
 $("gb-open").onclick = () => showTab("diag");
+// ---------------------------------------------------------------- report
+async function openReport(id) {
+  const text = st.j?.id === id ? st.j.text() : await sessionText(id);
+  const rep = report.analyze(text);
+  st.report = { id, rep };
+  $("rep-body").innerHTML = reportHtml(rep, { version: "v" + VERSION });
+  $("rep-body").querySelectorAll("[data-ai]").forEach((b) => { b.onclick = () => askAI(b.dataset.ai); });
+  st.repFrom = currentTab() === "report" ? st.repFrom : currentTab();
+  showTab("report");
+  window.scrollTo(0, 0);
+  st.j?.w("LOG", { msg: `report ${id}: ${rep.verdict}, ${rep.codes.length} codes, ${rep.findings.length} findings` });
+}
+
+const AI_URL = { chatgpt: "https://chatgpt.com/?q=", claude: "https://claude.ai/new?q=" };
+function askAI(how) {
+  const prompt = report.aiPrompt(st.report.rep);
+  copyText(prompt).then(() => toast("copied — paste it into the chat")).catch((e) => log("copy: " + e.message));
+  if (how === "copy") return;
+  const q = encodeURIComponent(prompt);
+  window.open(q.length < 7000 ? AI_URL[how] + q : AI_URL[how].replace(/\?q=$|new\?q=$/, ""), "_blank", "noopener");
+}
+
+async function shareReport() {
+  const r = st.report;
+  if (!r) return;
+  const text = report.toText(r.rep);
+  try {
+    if (navigator.share) await navigator.share({ title: "obdy report", text });
+    else { await copyText(text); toast("report copied"); }
+  } catch (e) { if (e.name !== "AbortError") log("share: " + e.message); }
+}
+$("rep-back").onclick = () => showTab(st.repFrom || "diag");
+$("rep-pdf").onclick = () => window.print();
+$("rep-share").onclick = shareReport;
+
 // ---------------------------------------------------------------- wiring
+const currentTab = () => document.querySelector(".tab:not([hidden])")?.id.slice(4) ?? "live";
 function renderCaps() {
   $("caps").innerHTML = "";
   for (const [k, v] of Object.entries(caps())) {
@@ -1113,4 +1155,5 @@ window.addEventListener("resize", () => drawCharts());
 {
   const t = location.hash.slice(1) === "charts" ? "live" : location.hash.slice(1);
   if (document.querySelector(`.tabs button[data-tab="${t}"]`)) showTab(t);
+  else if (t === "report") showTab("logs");
 }

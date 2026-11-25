@@ -20,7 +20,14 @@
 </head>
 <body>
   <header>
-    <div class="title"><img src="assets/favicon.svg" alt="">obdy <span id="ver" class="ver"></span></div>
+    <div class="title"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" rx="14" class="lg-bg"/>
+      <path class="lg-car" d="M6 38.5v-3.8q0-2.7 2.8-3.4l8.9-2.2 6.4-5Q26.5 22.2 29.7 22.2h7.4q3 0 5.4 1.8l6.3 4.6 7.4 1.3q3.8.7 3.8 4.4v4.2"/>
+      <path class="lg-win" d="M25.5 28.6h18.5"/>
+      <g class="lg-wheel"><circle cx="17.5" cy="39" r="5"/><path d="M17.5 36.5v5"/></g>
+      <g class="lg-wheel"><circle cx="46.5" cy="39" r="5"/><path d="M46.5 36.5v5"/></g>
+      <path class="lg-pulse" d="M6 52.5h16l3-5 4 8.5 4-11 3 7.5h22"/>
+    </svg>obdy <span id="ver" class="ver"></span></div>
     <div class="status"><span class="dot" id="dot"></span><span id="status">Not connected</span> <span id="batt" class="pill">🔋 —</span>
       <button id="theme-btn" class="icon-btn" type="button" aria-label="Toggle light/dark theme" title="Light / dark">
         <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>
@@ -147,6 +154,15 @@
         <div class="bar"><button id="set-reset">Reset to defaults</button></div>
       </div>
       <p class="muted small">Settings are saved in this browser.</p>
+    </section>
+
+    <section id="tab-report" class="tab" hidden>
+      <div class="bar rep-bar noprint">
+        <button id="rep-back" type="button">‹ Back</button>
+        <button id="rep-pdf" type="button">Save PDF</button>
+        <button id="rep-share" type="button">Share</button>
+      </div>
+      <div id="rep-body"></div>
     </section>
 
     <section id="tab-info" class="tab" hidden>

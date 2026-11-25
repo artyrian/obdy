@@ -1,7 +1,7 @@
 # obdy
 
 **Your phone as a car scanner.** Plug a Bluetooth OBD-II adapter into the car, open the page and see live engine
-data, trouble codes and misfires, run a guided test, and keep a log you can share with a mechanic.
+data, trouble codes and misfires, run a guided test and get a plain-language report you can show a mechanic.
 No app to install, no account, all data stays on your phone.
 
 **[▶ Open obdy](https://artyrian.github.io/obdy/)** · try **Demo** without a car
@@ -31,6 +31,9 @@ No app to install, no account, all data stays on your phone.
   | Full | ~13 min | Standard + 2500 rpm hold and throttle snaps |
   | Drive | any | a drive with codes checked before and after |
 
+- **Report in plain words.** After a test (or for any saved log): verdict, codes explained, what's out of range
+  and why it matters, charts and values. Save as PDF for a mechanic, or **Copy for AI** to get an explanation
+  from ChatGPT/Claude — obdy itself sends nothing anywhere.
 - **Recording.** Starts when you connect. Codes and misfires are checked every 20 s.
   Logs are compact and saved on the phone; share them as a file in one tap.
 - **Settings.** Pick which values to read and how often. Light and dark themes.

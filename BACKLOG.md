@@ -1,5 +1,17 @@
 # Backlog
 
+## Positioning (draft)
+"Find the intermittent problem": live charts of everything on one screen (tap to expand) + codes from the
+engine module + step-by-step test + a plain-language report right away. Free, no account, data stays on the phone.
+Strengths to lean on: any cheap BLE adapter, guided tests, context-aware ranges, actual-vs-desired checks, open log.
+
+## Native app (needed to sell)
+- Capacitor wrapper: keep `core/` and UI as is, swap `transport/ble.js` for a native BLE plugin
+  (`@capacitor-community/bluetooth-le`); background logging on iOS (`bluetooth-central`).
+- In-app purchases (StoreKit / RevenueCat); web version stays free as demo and landing.
+- TestFlight on own car first; then landing page + waitlist before the paid version.
+
+
 ## 0.4 — other cars
 - DTC fallback chain: UDS `19 02` → KWP2000 `18 02 FF 00` → OBD `03/07/0A`; log which one answered.
 - Scan all modules: module addresses (`hdr`/`rax`) from the car's OBDb profile, `19 02` per module.
@@ -36,7 +48,8 @@ Hypotheses from the market scan (Nov 2026) — check each before building:
 
 ## Monetization (open question)
 Options to test, core scanner stays free:
-- One-time Pro ($5–10): extra features (all-module scan, reports).
+- One-time Pro ($5–10): extra features (all-module scan, report history, drive recording in background).
+- AI report in-app (own backend, small model, cents per report) — free version keeps "Copy for AI".
 - Paid AI reports (pay per report or small subscription) — has a real cost per use, easy to justify.
 - Affiliate links to recommended BLE adapters (Amazon Associates).
 - Small fleets / Turo hosts: health checks for several cars, history, alerts.
