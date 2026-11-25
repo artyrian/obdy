@@ -18,3 +18,27 @@
 ## Infra
 - Custom domain via Cloudflare (`CNAME obd.<domain> → artyrian.github.io`, DNS-only until the cert is issued).
 - Releases: deploy Pages on `v*` tags instead of every push to `main`.
+
+## Product (to verify before investing)
+Hypotheses from the market scan (Nov 2026) — check each before building:
+- Positioning: free scanner that walks you through a test and explains what's wrong, no subscriptions.
+  Audience: owners with an intermittent problem, DIY people tired of subscriptions. Verify: talk to 5–10 such people, Reddit/forums.
+- Table stakes we lack vs a basic handheld scanner: clear codes, I/M readiness (TX inspection), DTC descriptions.
+- Differentiators: guided tests, context-aware ranges, module DTC memory (UDS), structured logs.
+- Ideas, by expected impact:
+  1. "Explain in plain words": AI report from a test log.
+  2. Report for a mechanic: PDF/link in one tap.
+  3. Native iOS app with background logging (removes Bluefy; needed for any public launch).
+  4. All-module scan via OBDb profiles (ABS/SRS/TCM without paid brand packs).
+- Not competing on: coding/adaptations, bidirectional tests.
+- Verify: market prices and features; App Store review rules for OBD apps;
+  OBDb CC BY-SA terms for commercial use (attribution + share-alike for the data).
+
+## Monetization (open question)
+Options to test, core scanner stays free:
+- One-time Pro ($5–10): extra features (all-module scan, reports).
+- Paid AI reports (pay per report or small subscription) — has a real cost per use, easy to justify.
+- Affiliate links to recommended BLE adapters (Amazon Associates).
+- Small fleets / Turo hosts: health checks for several cars, history, alerts.
+- Later: own branded adapter bundle.
+Verify: willingness to pay (landing page + waitlist), AI cost per report, affiliate rates.
