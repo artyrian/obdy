@@ -86,3 +86,20 @@ test("profile settings: ext values validated per repo", () => {
   assert.equal(S.normalize({ vehicle: { repo: "a b" } }).vehicle, null);
   assert.ok(S.estimateKbPerHour(c, 120, [1000, 1000]) > S.estimateKbPerHour(c));
 });
+
+test("profile defaults: first run, upgrade adds new keys, keeps user choices", () => {
+  const c = S.defaults();
+  const v1 = { version: 1, on: { "x.A": 1000, "x.B": 1000 } };
+  assert.ok(S.applyProfileDefaults(c, "Ford-Mustang", v1));
+  assert.deepEqual(c.ext["Ford-Mustang"], { "x.A": { on: true, every: 1000 }, "x.B": { on: true, every: 1000 } });
+  c.ext["Ford-Mustang"]["x.A"].on = false;           // user turned A off
+  assert.ok(!S.applyProfileDefaults(c, "Ford-Mustang", v1)); // same version: no-op
+  const v2 = { version: 2, on: { "x.A": 5000, "x.B": 2000, "x.C": 1000 } };
+  assert.ok(S.applyProfileDefaults(c, "Ford-Mustang", v2, { "x.B": 1000 }));
+  const e = c.ext["Ford-Mustang"];
+  assert.equal(e["x.A"].on, false);                  // user choice kept
+  assert.equal(e["x.B"].every, 2000);                // old default interval moved
+  assert.deepEqual(e["x.C"], { on: true, every: 1000 }); // new key added
+  const back = S.normalize(JSON.parse(JSON.stringify(c)));
+  assert.equal(back.extV["Ford-Mustang"], 2);
+});

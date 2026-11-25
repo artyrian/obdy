@@ -41,6 +41,7 @@ export function defaults() {
     useProfile: true, // detect the car (VIN) and load its OBDb profile
     vehicle: null,    // manual override: { repo: "Ford-Mustang", year: 2018 }
     ext: {},          // OBDb profile values per repo: { "Ford-Mustang": { "x.MUSTANG_LPFP_ACT": { on, every } } }
+    extV: {},         // version of the curated profile defaults applied per repo (lets new defaults reach old installs)
     pids: Object.fromEntries(PID_OPTIONS.map((p) => [p.c, { on: p.on, every: p.every }])),
   };
 }
@@ -65,6 +66,9 @@ export function normalize(raw) {
       out[k] = { on: v.on, every: EXT_EVERY.includes(v.every) ? v.every : 1000 };
     }
     d.ext[repo] = out;
+  }
+  for (const [repo, v] of Object.entries(raw.extV && typeof raw.extV === "object" ? raw.extV : {})) {
+    if (/^[A-Za-z0-9-]{2,60}$/.test(repo) && Number.isInteger(v)) d.extV[repo] = v;
   }
   for (const c of Object.keys(d.pids)) {
     const p = raw.pids?.[c];
@@ -116,4 +120,22 @@ export function load(storage = globalThis.localStorage) {
 
 export function save(cfg, storage = globalThis.localStorage) {
   try { storage?.setItem(KEY, JSON.stringify(cfg)); } catch { /* private mode etc. */ }
+}
+
+/**
+ * Apply curated profile defaults. `defs` = { version, on: { key: every } }.
+ * First run on a car: enable all. Newer version: add keys the user never had, and move values still at
+ * an older default interval to the new one; values the user changed or turned off are left alone.
+ * Returns true if cfg changed.
+ */
+export function applyProfileDefaults(cfg, repo, defs, oldEvery = {}) {
+  const have = (cfg.ext[repo] ??= {});
+  const v = cfg.extV[repo] ?? 0;
+  if (v >= defs.version && Object.keys(have).length) return false;
+  for (const [k, every] of Object.entries(defs.on)) {
+    if (!have[k]) have[k] = { on: true, every };
+    else if (have[k].on && oldEvery[k] != null && have[k].every === oldEvery[k]) have[k].every = every;
+  }
+  cfg.extV[repo] = defs.version;
+  return true;
 }

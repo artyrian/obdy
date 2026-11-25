@@ -96,7 +96,7 @@ export const PRESETS = {
     steps: () => [drive()] },
 };
 
-export const FAST = new Set(["010C", "0123", "0106", "0134", "0104", "0111"]);
+export const FAST = new Set(["010C", "0123", "0106", "0134", "0104", "0111", "010D"]); // + speed for drives
 
 /** New run state for a preset. */
 export function newRun(preset, now) {

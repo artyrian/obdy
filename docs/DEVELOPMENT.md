@@ -42,13 +42,15 @@ One line per event: `<date> <time.ms> <TAG> key=value ...` (same as `tools/obd_t
 | Tag | Meaning |
 |---|---|
 | `SESSION`, `CONN`, `ELM`, `LOG` | session start/end, adapter connect/loss, ELM info, app messages (incl. BLE steps) |
-| `KEYS`, `CFG` | PID names/units; poll settings (ms per PID) at record start and on change |
+| `KEYS`, `CFG` | PID names/units (manufacturer values keep their own unit, e.g. `x.ECU_HPFP_Desired` in psi while `0123` is kPa); poll settings (ms per PID) |
 | `S` | sample: only values polled since the previous line; `phase=` during guided tests |
 | `DTC`, `DTC_NEW`, `FF` | trouble codes (before/read), new code during recording, freeze frame |
 | `MISFIRE` | Mode 06 misfire counters per cylinder |
 | `BATT` | adapter voltage + engine state |
 | `VEH`, `PROFILE` | detected car (VIN, make/model/year, source) and the loaded OBDb profile |
-| `ANOM` | anomaly: new misfire, value out of the "bad" range |
+| `EXT` | raw reply of each manufacturer (OBDb) command, once per recording — to check decoding |
+| `RATE` | adapter speed every 30 s while recording: commands/s, ms per command, fast step on/off |
+| `ANOM` | anomaly: new misfire, value out of the "bad" range, manufacturer value stuck at 0 (`ext_zero`) |
 | `STEP`, `RESULT`, `STAT` | guided test steps, before/after comparison, per-step min/mean/max |
 
 ```sh

@@ -9,7 +9,7 @@ import * as guide from "./core/guide.js";
 import * as obdb from "./core/obdb.js";
 import { Series, draw, rateLabel } from "./ui/chart.js";
 
-const VERSION = "0.3.0"; // keep in sync with package.json (checked by tests)
+const VERSION = "0.3.1"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
 // write an extra S line when one of these moved by at least this much
@@ -17,13 +17,17 @@ const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 const DEADBAND = { "010C": 150, "0123": 300, "0111": 3, "0104": 5, "010D": 3 }; // trims/lambda oscillate by design
 const DEADBAND_MIN_MS = 250; // at most 4 extra lines/s
 const DTC_POLL_MS = 20000;
+const RATE_LOG_MS = 30000;
+// manufacturer values still polled at their own interval during fast guided steps (drive, snaps); the rest ≥ 10 s
+const FAST_EXT = new Set(["x.ECU_HPFP_Desired", "x.MUSTANG_LPFP_ACT", "x.MUSTANG_LPFP_SENS_V"]);
 const BATT_POLL_MS = 15000;
 
 const $ = (id) => document.getElementById(id);
 const st = { elm: null, transport: null, j: null, polling: false, recording: false, wake: null,
   minmax: {}, lastW: 0, lastVals: {}, lastDtc: 0, lastBatt: 0, dtcSeen: new Set(), misLive: {}, t0: 0,
   cfg: settings.load(), lastPoll: {}, latest: {}, unwritten: {}, series: {}, units: {},
-  vehicle: null, profile: null, hdr: "7E0", extLast: {}, extFail: {}, extBad: new Set(), extOk: new Set() };
+  vehicle: null, profile: null, hdr: "7E0", extLast: {}, extFail: {}, extBad: new Set(), extOk: new Set(),
+  extZero: {}, extRawLogged: new Set(), lastRateW: 0 };
 
 // ---------------------------------------------------------------- env
 const ua = navigator.userAgent;
@@ -113,6 +117,8 @@ const extSig = (c) => st.profile?.sigs.get(c);
 const unitOf = (c) => (isExt(c) ? extSig(c)?.sig.unit ?? "" : st.units[c] ?? (st.units[c] = decode(c, null).unit));
 // short tile labels for well-known manufacturer values (full name stays in the tooltip and Settings)
 const SHORT = { "x.MUSTANG_LPFP_ACT": "Low-side fuel", "x.MUSTANG_LPFP_DES": "Low-side desired",
+  "x.MUSTANG_LPFP_SENS_V": "Low-side sensor V", "x.ECU_LPFP_duty_cycle": "Low-side pump duty",
+  "x.ECU_HPFP_sensor_voltage": "Rail sensor V",
   "x.ECU_HPFP_Desired": "Rail desired", "x.MUSTANG_PCM_ENG_EOP_RAW": "Oil pressure",
   ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [`x.MUSTANG_PCM_MISF_ACCEL_CYL${n}_NORM`, `Misfire acc. cyl ${n}`])) };
 const labelOf = (c) => (isExt(c) ? SHORT[c] ?? extSig(c)?.sig.name ?? c : settings.LABEL[c] || c);
@@ -272,7 +278,7 @@ async function pollLoop() {
       .filter((c) => isSupported(c) || ((st.lastPoll[c] = now0), false))
       // fast guided steps: only the fast set every cycle, the rest at most every 10 s
       .filter((c) => !fastStep || guide.FAST.has(c) || now0 - (st.lastPoll[c] ?? 0) >= 10000);
-    const extList = st.alive === false ? [] : dueExt(now0);
+    const extList = st.alive === false ? [] : dueExt(now0, fastStep);
     if (!list.length && !extList.length) { await guideTick({}, st.alive !== false); await sleep(Math.min(250, settings.nextDueIn(st.cfg, st.lastPoll, Date.now()) || 20)); continue; }
     const vals = {};
     let alive = st.alive !== false || list.includes("010C");
@@ -298,6 +304,10 @@ async function pollLoop() {
     const dt = (performance.now() - tRate) / 1000;
     if (dt > 2) {
       $("rate").textContent = `${(n / dt).toFixed(1)} cmd/s · ${st.elm.rate.toFixed(0)} ms/cmd`;
+      if (st.recording && now - st.lastRateW >= RATE_LOG_MS) { // poll speed in the journal: tells how dense S lines can be
+        st.lastRateW = now;
+        st.j.w("RATE", { cmd_s: +(n / dt).toFixed(1), ms_cmd: Math.round(st.elm.rate), fast: fastStep ? 1 : 0 });
+      }
       n = 0; tRate = performance.now();
     }
     const lost = !alive && st.alive !== false; // log the ECU going silent once, not every second
@@ -322,13 +332,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------- manufacturer values (OBDb profile)
 /** Profile commands due now: any enabled signal whose interval has passed; skips commands the car rejected. */
-function dueExt(now) {
+function dueExt(now, fast = false) {
   if (!st.profile) return [];
   const cfg = extCfg(), due = new Map();
   for (const k of extEnabled()) {
     const { cmd } = st.profile.sigs.get(k);
     if (st.extBad.has(cmd.key)) continue;
-    const every = cfg[k].every;
+    const every = fast && !FAST_EXT.has(k) ? Math.max(cfg[k].every, 10000) : cfg[k].every;
     if (now - (st.extLast[cmd.key] ?? -Infinity) >= every) due.set(cmd.key, cmd);
   }
   return [...due.values()];
@@ -357,12 +367,22 @@ async function pollExt(cmds, vals) {
     }
     st.extFail[cmd.key] = 0;
     st.extOk.add(cmd.key);
+    if (st.recording && !st.extRawLogged.has(cmd.key)) { // raw reply once per recording: lets decoding be checked later
+      st.extRawLogged.add(cmd.key);
+      st.j.w("EXT", { key: cmd.key, raw: r });
+    }
     const on = extCfg();
     for (const sig of cmd.signals) {
       if (!on[sig.key]?.on) continue;
       const v = obdb.decodeSignal(sig.fmt, payload);
       vals[sig.key] = v;
       if (typeof v !== "number") continue;
+      if (v === 0 && (st.latest["010C"] ?? 0) > 400) { // a pressure/voltage stuck at 0 with the engine running = not real
+        if ((st.extZero[sig.key] = (st.extZero[sig.key] || 0) + 1) === 20) {
+          log(`⚠ ${labelOf(sig.key)} stays 0 with the engine running — likely not supported on this car (raw ${r})`);
+          st.j?.w("ANOM", { rule: "ext_zero", key: sig.key, raw: r });
+        }
+      } else st.extZero[sig.key] = 0;
       st.latest[sig.key] = v;
       showTile(sig.key, v, sig.unit);
       seriesOf(sig.key).push(t, dispVal(v, sig.unit));
@@ -373,9 +393,15 @@ async function pollExt(cmds, vals) {
 }
 
 // curated defaults per profile (the rest is off until enabled in Settings)
+// id -> poll interval (ms). Bump `version` to push new defaults to existing installs (see settings.applyProfileDefaults).
+const MISF = [1, 2, 3, 4].map((n) => `MUSTANG_PCM_MISF_ACCEL_CYL${n}_NORM`);
 const PROFILE_DEFAULTS = {
-  "Ford-Mustang": ["MUSTANG_LPFP_ACT", "MUSTANG_LPFP_DES", "[ECU] HPFP Desired", "MUSTANG_PCM_MISF_ACCEL_CYL1_NORM",
-    "MUSTANG_PCM_MISF_ACCEL_CYL2_NORM", "MUSTANG_PCM_MISF_ACCEL_CYL3_NORM", "MUSTANG_PCM_MISF_ACCEL_CYL4_NORM"],
+  "Ford-Mustang": {
+    version: 2,
+    on: { MUSTANG_LPFP_ACT: 1000, MUSTANG_LPFP_DES: 2000, MUSTANG_LPFP_SENS_V: 1000, "[ECU] LPFP duty cycle": 2000,
+      "[ECU] HPFP Desired": 1000, "[ECU] HPFP sensor voltage": 5000, ...Object.fromEntries(MISF.map((m) => [m, 2000])) },
+    old: { MUSTANG_LPFP_DES: 1000, ...Object.fromEntries(MISF.map((m) => [m, 1000])) }, // v1 intervals
+  },
 };
 
 async function fetchJson(url, ms = 6000) {
@@ -414,15 +440,14 @@ async function useProfile(repos, year) {
       const sigs = new Map();
       for (const cmd of cmds) for (const sig of cmd.signals) if (!sigs.has(sig.key)) sigs.set(sig.key, { sig, cmd });
       st.profile = { repo, year, src, cmds, sigs };
-      st.extLast = {}; st.extFail = {}; st.extBad = new Set(); st.extOk = new Set();
-      if (!st.cfg.ext[repo]) { // first time on this car: curated defaults
-        st.cfg.ext[repo] = {};
-        for (const id of PROFILE_DEFAULTS[repo] || []) {
-          const k = obdb.keyOf(id), hit = sigs.get(k);
-          if (hit) st.cfg.ext[repo][k] = { on: true, every: settings.EXT_EVERY.find((e) => e >= hit.cmd.every) ?? 1000 };
-        }
-        settings.save(st.cfg);
-      }
+      st.extLast = {}; st.extFail = {}; st.extBad = new Set(); st.extOk = new Set(); st.extZero = {};
+      const defs = PROFILE_DEFAULTS[repo];
+      if (defs) { // curated defaults: all on first connect, new ones added on upgrade
+        const on = {}, old = {};
+        for (const [id, every] of Object.entries(defs.on)) if (sigs.has(obdb.keyOf(id))) on[obdb.keyOf(id)] = every;
+        for (const [id, every] of Object.entries(defs.old || {})) old[obdb.keyOf(id)] = every;
+        if (settings.applyProfileDefaults(st.cfg, repo, { version: defs.version, on }, old)) settings.save(st.cfg);
+      } else if (!st.cfg.ext[repo]) { st.cfg.ext[repo] = {}; settings.save(st.cfg); }
       log(`profile ${repo} (${src}): ${sigs.size} values, ${extEnabled().length} on`);
       st.j?.w("PROFILE", { repo, src, year: year ?? "", values: sigs.size, on: extEnabled().length });
       if (st.recording) writeKeys(extEnabled());
@@ -538,7 +563,7 @@ const describeCfg = () => ({ ...settings.describe(st.cfg), ...(st.profile ? { pr
 
 async function startRecording() {
   st.sess = "r" + Journal.newId().slice(9);
-  st.t0 = Date.now(); st.lastW = 0; st.lastDtc = 0; st.misLive = {};
+  st.t0 = Date.now(); st.lastW = 0; st.lastDtc = 0; st.misLive = {}; st.extRawLogged = new Set(); st.lastRateW = 0;
   st.j.w("STEP", { sess: st.sess, id: "record", event: "start" });
   writeKeys(allKeys());
   st.j.w("CFG", describeCfg());
