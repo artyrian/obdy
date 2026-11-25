@@ -96,6 +96,32 @@ export function parseDtcs(resp, prefix) {
   return out;
 }
 
+// UDS DTC status bits (ISO 14229 ReadDTCInformation)
+export const UDS_FLAGS = [[0x01, "failed now"], [0x02, "failed this cycle"], [0x04, "pending"], [0x08, "confirmed"],
+  [0x10, "not run since clear"], [0x20, "failed since clear"], [0x40, "not run this cycle"], [0x80, "check engine on"]];
+const UDS_RELEVANT = 0xaf; // everything except the "test not completed" bits
+
+/**
+ * UDS 19 02 reply: 59 02 <availability mask> [DTC hi, DTC lo, failure type, status]*.
+ * -> { items: [{ code, ftb, status, flags }], codes } or null when there is no positive reply (e.g. 7F 19 11).
+ */
+export function parseUdsDtcs(resp) {
+  const r = (resp || "").toUpperCase();
+  const i = r.indexOf("5902");
+  if (i < 0) return null;
+  const b = hexToBytes(r.slice(i + 4).replace(/[^0-9A-F]/g, "").replace(/^(..)/, "")); // drop availability mask
+  if (!b) return { items: [], codes: [] };
+  const items = [];
+  for (let k = 0; k + 3 < b.length; k += 4) {
+    const [b0, b1, ftb, status] = b.slice(k, k + 4);
+    if ((!b0 && !b1) || !(status & UDS_RELEVANT)) continue;
+    const code = "PCBU"[b0 >> 6] + ((b0 >> 4) & 3) + (b0 & 0xf).toString(16).toUpperCase() + b1.toString(16).toUpperCase().padStart(2, "0");
+    items.push({ code, ftb: ftb.toString(16).toUpperCase().padStart(2, "0"), status,
+      flags: UDS_FLAGS.filter(([bit]) => status & bit && bit & UDS_RELEVANT).map(([, n]) => n) });
+  }
+  return { items, codes: [...new Set(items.map((x) => x.code))] };
+}
+
 /** CAN mode 06 reply: 46 + records [MID TID UASID V(2) MIN(2) MAX(2)] -> Map("mid:tid" -> value) */
 export function parseMode06(resp) {
   const out = new Map();

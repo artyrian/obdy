@@ -46,6 +46,7 @@ One line per event: `<date> <time.ms> <TAG> key=value ...` (same as `tools/obd_t
 | `S` | sample: only values polled since the previous line; `phase=` during guided tests |
 | `DTC`, `DTC_NEW`, `FF` | trouble codes (before/read), new code during recording, freeze frame |
 | `MISFIRE` | Mode 06 misfire counters per cylinder |
+| `DTC type=uds` | module DTC memory via UDS `19 02` (code, failure type, status bits) |
 | `BATT` | adapter voltage + engine state |
 | `VEH`, `PROFILE` | detected car (VIN, make/model/year, source) and the loaded OBDb profile |
 | `EXT` | raw reply of each manufacturer (OBDb) command, once per recording — to check decoding |
@@ -64,6 +65,13 @@ grep -E " (DTC_NEW|ANOM|MISFIRE) " obd_*.log
   (at most 4/s). Trims and lambda are excluded: they oscillate by design.
 - Fast guided-test steps (off/on prime, snaps, drive) poll only RPM, rail, trims, lambda, load, throttle.
 - Unsupported PIDs (from the `0100/0120/0140` bitmaps) are skipped after connect.
+
+## Trouble codes
+
+- OBD-II: modes `03` stored, `07` pending, `0A` permanent — emissions view, may be empty while the module has codes.
+- Module memory: UDS `19 02 FF` (fallbacks `8F`, `08`) to the PCM, like dealer tools / Car Scanner's Ford mode.
+  Status bits shown as chips (failed now, this cycle, pending, confirmed, since clear, MIL). New active module codes
+  during recording → `DTC_NEW type=uds`.
 
 ## Vehicle profiles (OBDb)
 

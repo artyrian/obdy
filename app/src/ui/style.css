@@ -224,3 +224,13 @@ details summary { cursor: pointer; padding: 6px 0; }
 #ext-list details { border-top: 1px solid var(--line); }
 #ext-list details:first-child { border-top: 0; }
 @media (max-width: 420px) { input.text { font-size: 16px; } #veh-repo { flex: 1; } }
+
+/* module DTCs */
+ul.dtcs { list-style: none; padding: 0; margin: 0; }
+ul.dtcs li { padding: 8px 0; border-top: 1px solid var(--line); }
+ul.dtcs li:first-child { border-top: 0; padding-top: 0; }
+ul.dtcs li > div:first-child { display: flex; gap: 8px; align-items: baseline; }
+ul.dtcs li a { margin-left: auto; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.chip { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--raised); border: 1px solid var(--line); color: var(--muted); }
+.chip.hot { color: var(--bad); border-color: currentColor; }

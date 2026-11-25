@@ -73,3 +73,16 @@ test("BLE pickPair: known FFF0 pair over first-found", async () => {
   assert.equal(pickPair("abcd", chars).nt.uuid, B("fff4"));
   assert.equal(pickPair("fff0", [c("fff1", { read: true })]), null);
 });
+
+test("UDS 19 02: codes with status, negative reply, empty memory", async () => {
+  const { parseUdsDtcs } = await import("../app/src/core/pids.js");
+  const r = parseUdsDtcs("5902FF008A002F03020024");
+  assert.deepEqual(r.codes, ["P008A", "P0302"]);
+  assert.deepEqual(r.items[0].flags, ["failed now", "failed this cycle", "pending", "confirmed", "failed since clear"]);
+  assert.equal(r.items[0].ftb, "00");
+  assert.equal(parseUdsDtcs("7F1911"), null);
+  assert.deepEqual(parseUdsDtcs("5902FF").codes, []);
+  assert.deepEqual(parseUdsDtcs("5902FF00010050").codes, []); // only "not completed" bits -> ignored
+  // multi-frame after cleanElm, with a response-pending in front
+  assert.deepEqual(parseUdsDtcs("7F19785902FF008A0009").codes, ["P008A"]);
+});

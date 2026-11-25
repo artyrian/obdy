@@ -29,7 +29,7 @@ export function commandsFor(signalset, year) {
     const verified = !c.dbg && !(year && inYears(c.dbgfilter, year));
     const cmd = `${svc}${did}`.toUpperCase();
     out.push({
-      key: `${c.hdr}.${cmd}`, hdr: c.hdr.toUpperCase(), cmd, every: Math.max(1000, Math.round((c.freq || 1) * 1000)), verified,
+      key: `${c.hdr}.${cmd}`, hdr: c.hdr.toUpperCase(), rax: c.rax ? String(c.rax).toUpperCase() : null, cmd, every: Math.max(1000, Math.round((c.freq || 1) * 1000)), verified,
       signals: (c.signals || []).map((s) => ({ key: keyOf(s.id), id: s.id, name: s.name || s.id, path: s.path || "Other",
         unit: unitLabel(s.fmt?.unit), fmt: s.fmt || {}, description: s.description || "" })),
     });

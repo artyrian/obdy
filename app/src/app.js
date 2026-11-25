@@ -9,7 +9,7 @@ import * as guide from "./core/guide.js";
 import * as obdb from "./core/obdb.js";
 import { Series, draw, rateLabel } from "./ui/chart.js";
 
-const VERSION = "0.3.1"; // keep in sync with package.json (checked by tests)
+const VERSION = "0.3.2"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
 // write an extra S line when one of these moved by at least this much
@@ -349,7 +349,12 @@ async function pollExt(cmds, vals) {
   cmds.sort((a, b) => a.hdr.localeCompare(b.hdr));
   for (const cmd of cmds) {
     if (!st.polling || !st.elm) return n;
-    if (cmd.hdr !== st.hdr) { await st.elm.cmd("ATSH" + cmd.hdr, 1000); st.hdr = cmd.hdr; }
+    if (cmd.hdr !== st.hdr) {
+      await st.elm.cmd("ATSH" + cmd.hdr, 1000);
+      // answers come from rax (or hdr+8); the ELM's automatic filter only covers 7E8–7EF
+      await st.elm.cmd(cmd.hdr === "7E0" ? "ATAR" : "ATCRA" + (cmd.rax || (parseInt(cmd.hdr, 16) + 8).toString(16).toUpperCase()), 1000);
+      st.hdr = cmd.hdr;
+    }
     const r = await st.elm.cmd(cmd.cmd, 1500);
     const t = Date.now();
     st.extLast[cmd.key] = t;
@@ -388,7 +393,7 @@ async function pollExt(cmds, vals) {
       seriesOf(sig.key).push(t, dispVal(v, sig.unit));
     }
   }
-  if (st.hdr !== "7E0" && st.elm) { await st.elm.cmd("ATSH7E0", 1000); st.hdr = "7E0"; }
+  if (st.hdr !== "7E0" && st.elm) { await st.elm.cmd("ATSH7E0", 1000); await st.elm.cmd("ATAR", 1000); st.hdr = "7E0"; }
   return n;
 }
 
@@ -536,8 +541,11 @@ async function pollDtcMisfires() {
       st.misLive[cyl] = m.cycle;
     }
   }
-  for (const [m, type] of [["07", "pending"], ["03", "stored"]]) {
-    for (const code of parseDtcs(await st.elm.cmd(m, 5000), "4" + m[1])) {
+  const uds = await st.elm.udsDtcs();
+  const udsActive = (uds.items || []).filter((x) => x.status & 0x0f).map((x) => x.code);
+  for (const [type, codes] of [["pending", parseDtcs(await st.elm.cmd("07", 5000), "47")],
+    ["stored", parseDtcs(await st.elm.cmd("03", 5000), "43")], ["uds", udsActive]]) {
+    for (const code of codes) {
       if (st.dtcSeen.has(code)) continue;
       st.dtcSeen.add(code);
       st.j.w("DTC_NEW", { sess: st.sess, type, code, rpm: rpm ?? 0, ect: vals["0105"] ?? "" });
@@ -612,11 +620,29 @@ async function readDiag() {
   const mis = await st.elm.misfires();
   const ff = await st.elm.freezeFrame();
   for (const [type, x] of Object.entries(d)) st.j.w("DTC", { tag: "read", type, codes: x.codes.join(",") || "-", raw: x.raw });
+  for (const it of d.uds?.items || []) st.j.w("DTC", { tag: "read", type: "uds", code: it.code, ftb: it.ftb, status: it.status.toString(16), flags: it.flags.join("|") });
   for (const [cyl, m] of Object.entries(mis)) st.j.w("MISFIRE", { tag: "read", cyl, cycle: m.cycle ?? "", avg10: m.avg10 ?? "" });
   if (ff) st.j.w("FF", ff);
   const names = { stored: "Stored", pending: "Pending", permanent: "Permanent" };
-  let h = `<div class="card"><h4>DTCs</h4><table>`;
+  const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  let h = `<div class="card"><h4>Engine module memory</h4>`;
+  if (d.uds?.unsupported) h += `<p class="muted small">The module didn't answer the UDS request (${esc(d.uds.raw || "no reply")}).</p>`;
+  else if (!d.uds?.items.length) h += `<p class="ok small" style="margin:0">No codes</p>`;
+  else {
+    h += `<ul class="dtcs">`;
+    for (const it of d.uds.items) {
+      const active = it.status & 0x0d; // failed now / pending / confirmed
+      h += `<li><div><b class="code ${active ? "bad" : "warn"}">${esc(it.code)}</b><span class="muted small">(${esc(it.ftb)})</span>
+        <a class="small" href="https://www.google.com/search?q=${encodeURIComponent(it.code + " " + (st.vehicle?.make || "") + " " + (st.vehicle?.model || ""))}" target="_blank" rel="noopener">look up</a></div>
+        <div class="chips">${it.flags.map((f) => `<span class="chip${/now|confirmed|check/.test(f) ? " hot" : ""}">${esc(f)}</span>`).join("")}</div></li>`;
+    }
+    h += `</ul>`;
+  }
+  h += `<p class="muted small">Read straight from the engine module (UDS), like dealer tools. A code can be here while
+    the OBD lists below are empty: OBD only reports codes by emissions rules.</p></div>`;
+  h += `<div class="card"><h4>OBD-II codes</h4><table>`;
   for (const [type, x] of Object.entries(d)) {
+    if (!names[type]) continue;
     h += `<tr><td>${names[type]}</td><td class="code ${x.codes.length ? "bad" : "ok"}">${x.codes.join(", ") || "none"}</td></tr>`;
   }
   h += `</table></div><div class="card"><h4>Misfires by cylinder</h4>
@@ -1020,7 +1046,7 @@ function renderGuideResult() {
     h += `<table class="small"><tr><th></th><th>before</th><th>after</th></tr>`;
     for (const [type, x] of Object.entries(res.dtc)) {
       const b = run.before.dtc[type]?.codes.join(", ") || "none", a = x.codes.join(", ") || "none";
-      h += `<tr><td>${type}</td><td>${esc(b)}</td><td class="${x.codes.length ? "bad" : "ok"}">${esc(a)}</td></tr>`;
+      h += `<tr><td>${type === "uds" ? "module" : type}</td><td>${esc(b)}</td><td class="${x.codes.length ? "bad" : "ok"}">${esc(a)}</td></tr>`;
     }
     for (const [cyl, m] of Object.entries(res.mis)) {
       if (cyl === "all" && m.cycle == null) continue;

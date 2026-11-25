@@ -77,6 +77,7 @@ export class FakeTransport {
       const h = (v) => v.toString(16).toUpperCase().padStart(4, "0");
       return `46${mid}0B24${h(cyc ? 1 : 0)}0000FFFF${mid}0C24${h(cyc)}0000FFFF`;
     }
+    if (s === "1902FF") return "5902FF008A002F03020024"; // P008A confirmed, P0302 since clear
     if (s === "0902") return "490201" + [...FAKE_VIN].map((c) => c.charCodeAt(0).toString(16).toUpperCase()).join("");
     if (s.startsWith("22") && s.length === 6) {
       const d = this._did(s.slice(2));

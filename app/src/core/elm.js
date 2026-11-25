@@ -1,5 +1,5 @@
 // ELM327 command layer over any transport with {write(str), onData(cb), close()}.
-import { cleanElm, dataBytes, parseDtcs, parseMode06, MISFIRE_MIDS, parseSupported, decode } from "./pids.js";
+import { parseUdsDtcs, cleanElm, dataBytes, parseDtcs, parseMode06, MISFIRE_MIDS, parseSupported, decode } from "./pids.js";
 
 export const INIT = [["ATZ", 5000], ["ATE0"], ["ATL0"], ["ATS0"], ["ATH0"], ["ATSP6"], ["ATAT2"], ["ATSH7E0"]];
 
@@ -77,7 +77,22 @@ export class Elm {
       const raw = await this.cmd(m, 5000);
       out[name] = { codes: parseDtcs(raw, "4" + m[1]), raw };
     }
+    out.uds = await this.udsDtcs();
     return out;
+  }
+
+  /**
+   * Module DTC memory via UDS 19 02 (what dealer tools and Car Scanner's Ford mode read): shows codes with their status
+   * even when OBD modes 03/07 don't report them. Header must already point at the module (7E0 = PCM by default).
+   */
+  async udsDtcs() {
+    let raw = "";
+    for (const req of ["1902FF", "19028F", "190208"]) {
+      raw = await this.cmd(req, 6000);
+      const p = parseUdsDtcs(raw);
+      if (p) return { ...p, raw, req };
+    }
+    return { items: [], codes: [], raw, req: "-", unsupported: true };
   }
 
   async misfires() {

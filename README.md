@@ -20,7 +20,8 @@ No app to install, no account, all data stays on your phone.
   on a Mustang. Pick more in Settings; values the car doesn't answer are skipped.
 - **Normal ranges.** A green band shows what's normal right now (engine off, warming up, idle).
   Values outside it turn orange or red.
-- **Trouble codes and misfires.** Stored, pending and permanent codes, freeze frame, misfire counts per cylinder.
+- **Trouble codes and misfires.** Codes straight from the engine module with their status (like dealer tools),
+  plus OBD stored/pending/permanent codes, freeze frame and misfire counts per cylinder.
 - **Guided tests.** Step-by-step checklist that tells you what to do and moves on by itself:
 
   | Test | Time | Steps |
