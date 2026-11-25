@@ -1,0 +1,9 @@
+export async function runWithTimeout(promise, time, exception) {
+    let timer;
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => {
+            timer = setTimeout(() => reject(exception), time);
+        }),
+    ]).finally(() => clearTimeout(timer));
+}

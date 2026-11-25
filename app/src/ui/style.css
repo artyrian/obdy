@@ -299,3 +299,6 @@ ul.dtcs li a { margin-left: auto; }
   .card, .rep-head { break-inside: avoid; }
   a { color: inherit; text-decoration: none; }
 }
+
+/* ---------- native app (Capacitor) */
+html.native #rep-pdf { display: none; }

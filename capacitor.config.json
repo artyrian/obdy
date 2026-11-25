@@ -1,0 +1,7 @@
+{
+  "appId": "io.github.artyrian.obdy",
+  "appName": "obdy",
+  "webDir": "app",
+  "ios": { "contentInset": "never", "backgroundColor": "#0b0d10" },
+  "plugins": { "BluetoothLe": { "displayStrings": { "scanning": "Looking for the OBD adapter…", "cancel": "Cancel", "availableDevices": "Adapters nearby", "noDeviceFound": "No adapter found" } } }
+}

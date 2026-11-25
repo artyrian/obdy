@@ -3,15 +3,15 @@
 // connection on a phone can be diagnosed from Info → Log.
 
 // full 128-bit strings: some iOS Web Bluetooth browsers mishandle numeric aliases
-const SERVICES = ["fff0", "ffe0", "18f0", "ae30"].map((x) => `0000${x}-0000-1000-8000-00805f9b34fb`)
+export const SERVICES = ["fff0", "ffe0", "18f0", "ae30"].map((x) => `0000${x}-0000-1000-8000-00805f9b34fb`)
   .concat("e7810a71-73ae-499d-8c15-faa9aef0c3f2");
 // known notify/write pairs (short 16-bit ids inside the 0000xxxx-0000-1000-8000-00805f9b34fb base)
 const PAIRS = { fff0: ["fff1", "fff2"], ffe0: ["ffe1", "ffe1"], "18f0": ["2af0", "2af1"], ae30: ["ae02", "ae01"] };
-const SKIP = ["1800", "1801", "180a", "180f"]; // GAP, GATT, device info, battery
+export const SKIP = ["1800", "1801", "180a", "180f"]; // GAP, GATT, device info, battery
 
 export const bleAvailable = () => typeof navigator !== "undefined" && !!navigator.bluetooth;
 
-const short = (uuid) => (/^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/i.exec(uuid)?.[1] || uuid).toLowerCase();
+export const short = (uuid) => (/^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/i.exec(uuid)?.[1] || uuid).toLowerCase();
 const props = (p) => ["read", "write", "writeWithoutResponse", "notify", "indicate"].filter((k) => p[k]).join("+");
 
 function withTimeout(p, ms, what) {

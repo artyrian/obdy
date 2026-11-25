@@ -6,10 +6,13 @@ engine module + step-by-step test + a plain-language report right away. Free, no
 Strengths to lean on: any cheap BLE adapter, guided tests, context-aware ranges, actual-vs-desired checks, open log.
 
 ## Native app (needed to sell)
-- Capacitor wrapper: keep `core/` and UI as is, swap `transport/ble.js` for a native BLE plugin
-  (`@capacitor-community/bluetooth-le`); background logging on iOS (`bluetooth-central`).
+- Done (0.5): Capacitor iOS project, native BLE transport, share files, keep awake; local build with a free Apple ID (docs/IOS.md).
+- Verify on the car: native BLE with UCSI-2100, long recordings, report share.
+- Background logging on iOS (`bluetooth-central`): the WebView sleeps in background, the poll loop has to move to native code.
+- Save PDF in the app (native print/PDF plugin).
+- Android: `npx cap add android`, BLE permissions, foreground service for background logging.
+- TestFlight via CI (GitHub macOS runner + App Store Connect API key) once the Developer Program is paid.
 - In-app purchases (StoreKit / RevenueCat); web version stays free as demo and landing.
-- TestFlight on own car first; then landing page + waitlist before the paid version.
 
 
 ## 0.4 — other cars

@@ -1,7 +1,8 @@
 import { Elm } from "./core/elm.js";
 import { KPA_PSI, dataBytes, decode, fmt, parseDtcs, replyPrefix } from "./core/pids.js";
 import { Journal, listSessions, sessionText, deleteSession } from "./core/journal.js";
-import { BleTransport, bleAvailable } from "./transport/ble.js";
+import { BleTransport, bleAvailable as webBle } from "./transport/ble.js";
+import { isNative, nativeTransport, shareFile, shareText, keepAwake } from "./native.js";
 import { FakeTransport } from "./transport/fake.js";
 import * as settings from "./core/settings.js";
 import { refFor, status as refStatus } from "./core/refs.js";
@@ -11,7 +12,7 @@ import { Series, draw, rateLabel } from "./ui/chart.js";
 import * as report from "./core/report.js";
 import { reportHtml } from "./ui/report.js";
 
-const VERSION = "0.4.0"; // keep in sync with package.json (checked by tests)
+const VERSION = "0.5.0"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
 // write an extra S line when one of these moved by at least this much
@@ -25,6 +26,8 @@ const FAST_EXT = new Set(["x.ECU_HPFP_Desired", "x.MUSTANG_LPFP_ACT", "x.MUSTANG
 const BATT_POLL_MS = 15000;
 
 const $ = (id) => document.getElementById(id);
+const bleAvailable = () => isNative() || webBle();
+if (isNative()) document.documentElement.classList.add("native");
 const st = { elm: null, transport: null, j: null, polling: false, recording: false, wake: null,
   minmax: {}, lastW: 0, lastVals: {}, lastDtc: 0, lastBatt: 0, dtcSeen: new Set(), misLive: {}, t0: 0,
   cfg: settings.load(), lastPoll: {}, latest: {}, unwritten: {}, series: {}, units: {},
@@ -39,11 +42,11 @@ const isAndroid = /Android/.test(ua);
 function caps() {
   const f = typeof File !== "undefined" ? new File(["x"], "x.log", { type: "text/plain" }) : null;
   return {
-    "Web Bluetooth": bleAvailable(),
+    [isNative() ? "Bluetooth (app)" : "Web Bluetooth"]: bleAvailable(),
     "Share file": !!(navigator.canShare && f && navigator.canShare({ files: [f] })),
     "Share text": !!navigator.share,
     "Clipboard": !!navigator.clipboard?.writeText,
-    "Keep screen on (Wake Lock)": "wakeLock" in navigator,
+    "Keep screen on": isNative() || "wakeLock" in navigator,
     "Storage (IndexedDB)": typeof indexedDB !== "undefined",
     "HTTPS / localhost": window.isSecureContext,
   };
@@ -201,7 +204,7 @@ async function connect(demo) {
   hideError();
   const step = (m) => { $("status").textContent = m; log(m); };
   try {
-    const tr = demo ? new FakeTransport() : new BleTransport(log);
+    const tr = demo ? new FakeTransport() : isNative() ? await nativeTransport(log) : new BleTransport(log);
     step(demo ? "starting demo…" : "choose the adapter…");
     await tr.connect(); // BLE: requestDevice is its first await (needs this click)
     tr.onDisconnect = () => { log("adapter disconnected"); st.j?.w("CONN", { event: "lost" }); teardown(); };
@@ -603,6 +606,7 @@ async function stopRecording() {
 
 async function wakeLock(on) {
   try {
+    if (isNative()) { await keepAwake(on); st.j?.w("LOG", { msg: `keep awake ${on}` }); return; }
     if (on && "wakeLock" in navigator) {
       st.wake = await navigator.wakeLock.request("screen");
       st.j?.w("LOG", { msg: "wake lock on" });
@@ -679,7 +683,8 @@ async function exportLog(id, how) {
   const text = st.j?.id === id ? st.j.text() : await sessionText(id);
   const name = `obd_${id}.log`;
   try {
-    if (how === "share") {
+    if (isNative() && (how === "share" || how === "download")) await shareFile(name, text);
+    else if (how === "share") {
       const file = new File([text], name, { type: "text/plain" });
       if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: name });
       else if (navigator.share) await navigator.share({ title: name, text });
@@ -1100,7 +1105,8 @@ async function shareReport() {
   if (!r) return;
   const text = report.toText(r.rep);
   try {
-    if (navigator.share) await navigator.share({ title: "obdy report", text });
+    if (isNative()) await shareText("obdy report", text);
+    else if (navigator.share) await navigator.share({ title: "obdy report", text });
     else { await copyText(text); toast("report copied"); }
   } catch (e) { if (e.name !== "AbortError") log("share: " + e.message); }
 }

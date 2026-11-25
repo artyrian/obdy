@@ -60,6 +60,23 @@ test("app VERSION matches package.json", async () => {
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const app = await readFile(new URL("../app/src/app.js", import.meta.url), "utf8");
   assert.equal(app.match(/const VERSION = "([^"]+)"/)[1], pkg.version);
+  const pbx = await readFile(new URL("../ios/App/App.xcodeproj/project.pbxproj", import.meta.url), "utf8");
+  for (const m of pbx.matchAll(/MARKETING_VERSION = ([^;]+);/g)) assert.equal(m[1], pkg.version, "iOS MARKETING_VERSION");
+});
+
+test("vendored Capacitor modules use browser-resolvable imports", async () => {
+  const { readdir, readFile } = await import("node:fs/promises");
+  const root = new URL("../app/vendor/", import.meta.url);
+  const files = (await readdir(root, { recursive: true })).filter((f) => f.endsWith(".js"));
+  assert.ok(files.length > 10);
+  for (const f of files) {
+    const src = await readFile(new URL(f, root), "utf8");
+    const specs = [...src.matchAll(/^\s*(?:import|export)\b[^;'"]*?from\s*['"]([^'"]+)['"]|\bimport\(\s*['"]([^'"]+)['"]/gm)].map((m) => m[1] ?? m[2]);
+    for (const x of specs) {
+      if (x.startsWith(".")) assert.match(x, /\.js$/, `${f}: ${x}`);
+      else assert.match(x, /^@capacitor\/(core|synapse)$/, `${f}: ${x}`);
+    }
+  }
 });
 
 test("BLE pickPair: known FFF0 pair over first-found", async () => {

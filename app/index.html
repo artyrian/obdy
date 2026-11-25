@@ -17,6 +17,17 @@
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <link rel="stylesheet" href="src/ui/style.css">
+  <!-- Capacitor plugins for the native app (tools/vendor.mjs); never loaded on the web -->
+  <script type="importmap">
+    { "imports": {
+      "@capacitor/core": "./vendor/capacitor/core.js",
+      "@capacitor/synapse": "./vendor/capacitor/synapse.js",
+      "@capacitor-community/bluetooth-le": "./vendor/bluetooth-le/index.js",
+      "@capacitor-community/keep-awake": "./vendor/keep-awake/index.js",
+      "@capacitor/filesystem": "./vendor/filesystem/index.js",
+      "@capacitor/share": "./vendor/share/index.js"
+    } }
+  </script>
 </head>
 <body>
   <header>

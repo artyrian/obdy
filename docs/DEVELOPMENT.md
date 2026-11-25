@@ -22,7 +22,10 @@ app/src/core/           pids.js (decoders) · elm.js (ELM327 protocol) · journa
                         obdb.js (OBDb signal sets, VIN helpers) · report.js (log -> findings, text, AI prompt)
 app/profiles/           bundled OBDb profiles (Ford-Mustang, CC BY-SA 4.0) for offline use
 app/src/ui/             style.css (light/dark, print) · chart.js (canvas charts) · report.js (report HTML, SVG charts)
-app/src/transport/      ble.js (Web Bluetooth) · fake.js (Demo)
+app/src/transport/      ble.js (Web Bluetooth) · ble-native.js (app, Capacitor BLE) · fake.js (Demo)
+app/src/native.js       native-app helpers (share file, keep awake); loaded only inside the app
+app/vendor/             Capacitor plugin ES modules (`npm run vendor`), mapped by the import map in index.html
+ios/                    Capacitor iOS project — build: docs/IOS.md
 tests/                  unit tests for core modules
 tools/obd_tui.py        Python TUI (Mac, bleak): Ford DID scans, log diffing
 docs/screenshots/       README images
