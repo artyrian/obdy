@@ -15,10 +15,6 @@
 ## UI
 - Less noise on the phone: fewer tiles by default, collapsible hints, compact header (status + buttons in one row).
 
-## Integrations
-- Bouncie (cellular tracker, no BLE): cloud tab via Bouncie API — DTCs, battery, fuel, odometer.
-  Needs OAuth + a small backend for the client secret (e.g. Cloudflare Worker).
-
 ## Infra
 - Custom domain via Cloudflare (`CNAME obd.<domain> → artyrian.github.io`, DNS-only until the cert is issued).
 - Releases: deploy Pages on `v*` tags instead of every push to `main`.
