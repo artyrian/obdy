@@ -12,7 +12,7 @@ import { Series, draw, rateLabel } from "./ui/chart.js";
 import * as report from "./core/report.js";
 import { reportHtml } from "./ui/report.js";
 
-const VERSION = "0.5.1"; // keep in sync with package.json (checked by tests)
+const VERSION = "0.5.2"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
 // write an extra S line when one of these moved by at least this much
