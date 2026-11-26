@@ -12,7 +12,7 @@ import { Series, draw, rateLabel } from "./ui/chart.js";
 import * as report from "./core/report.js";
 import { reportHtml } from "./ui/report.js";
 
-const VERSION = "0.5.0"; // keep in sync with package.json (checked by tests)
+const VERSION = "0.5.1"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
 // write an extra S line when one of these moved by at least this much
@@ -753,7 +753,7 @@ function drawCharts() {
     if (big) {
       const pts = s.since(now - windowMs).v;
       t.querySelector(".mm").textContent = !pts.length ? (isSupported(c) ? "no data yet" : "not supported by this car")
-        : `last ${st.cfg.window} min: min ${fmtDisp(Math.min(...pts), unit)} · max ${fmtDisp(Math.max(...pts), unit)} · ${pts.length} pts`;
+        : `last ${st.cfg.window} min: min ${fmtDisp(pts.reduce((a, b) => (b < a ? b : a)), unit)} · max ${fmtDisp(pts.reduce((a, b) => (b > a ? b : a)), unit)} · ${pts.length} pts`;
     } else if (!isSupported(c)) t.querySelector(".mm").textContent = "not supported";
   }
 }
@@ -814,6 +814,9 @@ function renderExt() {
   const box = $("ext-list"), p = st.profile;
   $("ext-card").hidden = !p || !st.cfg.useProfile;
   if (!p || !st.cfg.useProfile) return;
+  // the list has hundreds of rows: build it only when Settings is on screen
+  if ($("tab-settings").hidden) { st.extDirty = true; $("ext-count").textContent = `${extEnabled().length} on · ${p.sigs.size} available`; return; }
+  st.extDirty = false;
   const q = $("ext-q").value.trim().toLowerCase(), cfg = (st.cfg.ext[p.repo] ??= {});
   const groups = new Map();
   for (const [k, { sig, cmd }] of p.sigs) {
@@ -896,8 +899,17 @@ function applySettings() {
 $("set-log").onchange = (e) => { st.cfg.logEvery = Number(e.target.value); applySettings(); };
 $("set-deadband").onchange = (e) => { st.cfg.deadband = e.target.checked; applySettings(); };
 $("set-autorec").onchange = (e) => { st.cfg.autoRecord = e.target.checked; applySettings(); };
-$("set-window").onchange = (e) => { st.cfg.window = Number(e.target.value); applySettings(); };
-$("chart-window").onchange = (e) => { st.cfg.window = Number(e.target.value); applySettings(); };
+// chart window only changes the drawing: no settings/tiles rebuild (that froze the phone for seconds)
+function setWindow(v) {
+  st.cfg.window = v;
+  settings.save(st.cfg);
+  fillSelect($("set-window"), settings.WINDOW_CHOICES, v, (x) => `${x} min`);
+  syncWindow();
+  drawCharts();
+  if (st.recording) st.j.w("CFG", describeCfg());
+}
+$("set-window").onchange = (e) => setWindow(Number(e.target.value));
+$("chart-window").onchange = (e) => setWindow(Number(e.target.value));
 $("set-reset").onclick = () => { if (confirm("Reset settings to defaults?")) { st.cfg = settings.defaults(); applySettings(); } };
 function syncWindow() { fillSelect($("chart-window"), settings.WINDOW_CHOICES, st.cfg.window, (v) => `${v} min`); }
 
@@ -1136,6 +1148,7 @@ function showTab(name) {
   });
   document.querySelectorAll(".tab").forEach((t) => (t.hidden = t.id !== "tab-" + name));
   if (name === "logs") renderLogs();
+  if (name === "settings" && st.extDirty) renderExt();
   drawCharts();
   try { history.replaceState(null, "", "#" + name); } catch { /* ignore */ }
 }

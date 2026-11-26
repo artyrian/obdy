@@ -103,3 +103,21 @@ test("profile defaults: first run, upgrade adds new keys, keeps user choices", (
   const back = S.normalize(JSON.parse(JSON.stringify(c)));
   assert.equal(back.extV["Ford-Mustang"], 2);
 });
+
+test("Series.since uses the sorted time index", () => {
+  const s = new Series();
+  for (let i = 0; i < 100; i++) s.push(i * 10, i);
+  assert.deepEqual(s.since(495).v.slice(0, 2), [50, 51]);
+  assert.equal(s.since(0).v.length, 100);
+  assert.equal(s.since(10000).v.length, 0);
+});
+
+test("decimate keeps spikes and order, shrinks to ~4 points per column", async () => {
+  const { decimate } = await import("../app/src/ui/chart.js");
+  const t = Array.from({ length: 10000 }, (_, i) => i), v = t.map((i) => (i === 5003 ? 99 : i === 7001 ? -5 : 1));
+  const out = decimate(t, v, (x) => Math.floor(x / 100)); // 100 columns
+  assert.ok(out.t.length <= 400);
+  assert.ok(out.v.includes(99) && out.v.includes(-5));
+  assert.ok(out.t.every((x, i) => !i || x > out.t[i - 1]));
+  assert.equal(out.t[0], 0); assert.equal(out.t.at(-1), 9999);
+});

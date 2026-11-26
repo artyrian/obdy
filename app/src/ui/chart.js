@@ -2,7 +2,8 @@
 
 /** Time series trimmed to a window (ms) and a hard point cap. */
 export class Series {
-  constructor(cap = 3000) { this.t = []; this.v = []; this.cap = cap; }
+  // 30 min of the fastest PIDs (~7/s) fit; drawing is decimated to the pixel width
+  constructor(cap = 15000) { this.t = []; this.v = []; this.cap = cap; }
 
   push(t, v) {
     if (v == null || !Number.isFinite(v)) return;
@@ -12,21 +13,27 @@ export class Series {
 
   /** Points with t >= from. */
   since(from) {
-    let i = 0;
-    while (i < this.t.length && this.t[i] < from) i++;
+    const i = this.indexOf(from);
     return { t: this.t.slice(i), v: this.v.slice(i) };
   }
 
+  /** First index with t >= from (binary search; t is sorted). */
+  indexOf(from) {
+    let lo = 0, hi = this.t.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (this.t[m] < from) lo = m + 1; else hi = m; }
+    return lo;
+  }
+
   trim(from) {
-    let i = 0;
-    while (i < this.t.length && this.t[i] < from) i++;
+    const i = this.indexOf(from);
     if (i) { this.t.splice(0, i); this.v.splice(0, i); }
   }
 }
 
 /** min/max with a little padding; flat lines get a visible band. */
 export function yRange(v) {
-  let lo = Math.min(...v), hi = Math.max(...v);
+  let lo = Infinity, hi = -Infinity;
+  for (const x of v) { if (x < lo) lo = x; if (x > hi) hi = x; }
   if (!Number.isFinite(lo)) return [0, 1];
   if (hi - lo < 1e-9) { const p = Math.abs(hi) * 0.05 || 1; lo -= p; hi += p; }
   const pad = (hi - lo) * 0.08;
@@ -55,7 +62,7 @@ export function draw(canvas, s, { now, windowMs: windowMs0, big = false, gapMs =
   // fit the x axis to the data until the window is full (min 30 s)
   windowMs = Math.min(windowMs, Math.max(30000, all.t.length ? now - all.t[0] : 0));
   const from = now - windowMs;
-  const { t, v } = all;
+  let { t, v } = all;
   const muted = css("--muted", canvas), line = css("--line", canvas), accent = css("--accent", canvas);
   const L = big ? 48 : 2, R = 4, T = big ? 8 : 3, B = big ? 18 : 3;
   const pw = w - L - R, ph = h - T - B;
@@ -103,6 +110,7 @@ export function draw(canvas, s, { now, windowMs: windowMs0, big = false, gapMs =
 
   g.strokeStyle = accent; g.lineWidth = big ? 1.6 : 1.3; g.lineJoin = "round";
   g.beginPath();
+  if (v.length > pw * 2) ({ t, v } = decimate(t, v, (x) => Math.floor(X(x))));
   // long gaps are drawn as breaks (disconnects, paused polling)
   for (let i = 0; i < v.length; i++) {
     const gap = i && t[i] - t[i - 1] > gapMs;
@@ -113,6 +121,25 @@ export function draw(canvas, s, { now, windowMs: windowMs0, big = false, gapMs =
     g.fillStyle = accent;
     for (let i = 0; i < v.length; i++) { g.beginPath(); g.arc(X(t[i]), Y(v[i]), big ? 2.2 : 1.4, 0, 7); g.fill(); }
   }
+}
+
+/** Keep the first, min, max and last point of each pixel column: same picture, far fewer segments. */
+export function decimate(t, v, col) {
+  const ot = [], ov = [];
+  let c0 = null, idx = [];
+  const flush = () => {
+    if (!idx.length) return;
+    let lo = idx[0], hi = idx[0];
+    for (const i of idx) { if (v[i] < v[lo]) lo = i; if (v[i] > v[hi]) hi = i; }
+    for (const i of [...new Set([idx[0], lo, hi, idx.at(-1)])].sort((a, b) => a - b)) { ot.push(t[i]); ov.push(v[i]); }
+  };
+  for (let i = 0; i < t.length; i++) {
+    const c = col(t[i]);
+    if (c !== c0) { flush(); idx = []; c0 = c; }
+    idx.push(i);
+  }
+  flush();
+  return { t: ot, v: ov };
 }
 
 /** Actual poll period from the last minute of samples: "0.14 s", "1.2 s", "10 s"; "" if stale. */
