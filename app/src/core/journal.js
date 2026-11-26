@@ -63,7 +63,8 @@ export class Journal {
   async start(meta = {}) {
     if (!this.memoryOnly) {
       const db = await this.dbp;
-      await tx(db, [SESS], "readwrite", (t) => t.objectStore(SESS).put({ id: this.id, started: Date.now(), ...meta }));
+      this.rec = { id: this.id, started: Date.now(), ...meta };
+      await tx(db, [SESS], "readwrite", (t) => t.objectStore(SESS).put(this.rec));
     }
     this.w("SESSION", { event: "start", ...meta });
   }
@@ -76,6 +77,12 @@ export class Journal {
       this.pending = this.pending.then(async () => {
         const db = await this.dbp;
         await tx(db, [STORE], "readwrite", (t) => t.objectStore(STORE).add({ sess: this.id, l }));
+        // keep the session's last-write time and size current (Logs list), at most every 10 s
+        const now = Date.now();
+        if (this.rec && (!this.rec.last || now - this.rec.last > 10000)) {
+          Object.assign(this.rec, { last: now, lines: this.lines.length });
+          await tx(db, [SESS], "readwrite", (t) => t.objectStore(SESS).put(this.rec));
+        }
       }).catch(() => {});
     }
     return l;

@@ -136,6 +136,8 @@ export function applyProfileDefaults(cfg, repo, defs, oldEvery = {}) {
     if (!have[k]) have[k] = { on: true, every };
     else if (have[k].on && oldEvery[k] != null && have[k].every === oldEvery[k]) have[k].every = every;
   }
+  // dropped from the defaults: switch off only where the user left the old default untouched
+  if (v) for (const [k, every] of Object.entries(defs.off || {})) if (have[k]?.on && have[k].every === every) have[k].on = false;
   cfg.extV[repo] = defs.version;
   return true;
 }

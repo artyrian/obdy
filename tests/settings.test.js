@@ -121,3 +121,16 @@ test("decimate keeps spikes and order, shrinks to ~4 points per column", async (
   assert.ok(out.t.every((x, i) => !i || x > out.t[i - 1]));
   assert.equal(out.t[0], 0); assert.equal(out.t.at(-1), 9999);
 });
+
+test("profile defaults: dropped values switch off only if untouched", () => {
+  const c = S.defaults();
+  S.applyProfileDefaults(c, "R", { version: 2, on: { "x.A": 1000, "x.B": 2000, "x.C": 2000 } });
+  c.ext.R["x.C"].every = 5000; // user changed it
+  assert.ok(S.applyProfileDefaults(c, "R", { version: 3, on: { "x.A": 1000 }, off: { "x.B": 2000, "x.C": 2000 } }));
+  assert.equal(c.ext.R["x.A"].on, true);
+  assert.equal(c.ext.R["x.B"].on, false);
+  assert.equal(c.ext.R["x.C"].on, true);
+  const fresh = S.defaults(); // first connect: nothing to switch off
+  S.applyProfileDefaults(fresh, "R", { version: 3, on: { "x.A": 1000 }, off: { "x.B": 2000 } });
+  assert.equal(fresh.ext.R["x.B"], undefined);
+});

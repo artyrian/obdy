@@ -198,8 +198,9 @@ table.pids td:nth-child(3) { width: 1%; white-space: nowrap; text-align: right; 
 table.pids tr.off .chk span { color: var(--muted); }
 
 /* ---------- logs, info */
-.logrow { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
-.logrow .bar { margin: 4px 0 0; }
+.logrow { display: block; }
+.logrow .lr-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.logrow .bar { margin: 8px 0 0; }
 .logrow button { min-height: 36px; padding: 6px 12px; font-size: 14px; }
 .caps { list-style: none; padding: 0; margin: 0; }
 .caps li { padding: 6px 0; border-bottom: 1px solid var(--line); }
@@ -228,8 +229,7 @@ table.pids tr.off .chk span { color: var(--muted); }
 }
 
 /* vehicle + manufacturer values */
-.veh { margin: -4px 0 8px; }
-.veh:empty { display: none; }
+.veh { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .veh-info { margin: 0 0 4px; font-weight: 600; }
 input.text { font: inherit; font-size: 15px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line);
   background: var(--card); color: var(--text); min-height: 40px; min-width: 0; }
@@ -322,3 +322,25 @@ html.native #rep-pdf { display: none; }
 .pk-empty { margin: 6px 2px; }
 .spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--muted); border-right-color: transparent;
   border-radius: 50%; vertical-align: -1px; animation: lg-spin .8s linear infinite; }
+
+/* ---------- decluttered layout */
+.empty h4 { margin-bottom: 6px; }
+.empty ol { margin: 0 0 8px; padding-left: 20px; line-height: 1.6; }
+.tile:not(.big) .ref { display: none; } /* normal-range text only on the expanded chart; the band shows it */
+details.more > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; padding: 0; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary h4 { margin: 0; }
+details.more > summary::after { content: "›"; color: var(--muted); font-size: 20px; transition: transform .15s; }
+details.more[open] > summary::after { transform: rotate(90deg); }
+details.more[open] > summary { margin-bottom: 10px; }
+h4.sub { margin: 14px 0 4px; }
+details.menu { position: relative; }
+details.menu > summary { list-style: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px;
+  color: var(--muted); font-size: 20px; padding: 0; border: 1px solid var(--line); }
+details.menu > summary::-webkit-details-marker { display: none; }
+.menu-pop { position: absolute; right: 0; top: 40px; z-index: 20; display: grid; min-width: 150px; padding: 6px; gap: 4px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+.menu-pop button { text-align: left; border: 0; background: transparent; }
+.menu-pop button:hover { background: var(--raised); }
+.danger { color: var(--bad) !important; }
+.pids select[hidden] { display: none !important; }

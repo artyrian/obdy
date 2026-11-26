@@ -39,7 +39,7 @@
       <g class="lg-wheel"><circle cx="46.5" cy="39" r="5"/><path d="M46.5 36.5v5"/></g>
       <path class="lg-pulse" d="M6 52.5h16l3-5 4 8.5 4-11 3 7.5h22"/>
     </svg>obdy <span id="ver" class="ver"></span></div>
-    <div class="status"><span class="dot" id="dot"></span><span id="status">Not connected</span> <span id="batt" class="pill">🔋 —</span>
+    <div class="status"><span class="dot" id="dot"></span><span id="status">Not connected</span> <span id="batt" class="pill" hidden></span>
       <button id="theme-btn" class="icon-btn" type="button" aria-label="Toggle light/dark theme" title="Light / dark">
         <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>
         <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
@@ -54,7 +54,7 @@
   <div id="err" class="banner err" role="alert" hidden>
     <div class="msg"></div>
     <div class="bar"><button id="err-copy">Copy log</button><button id="err-close">Dismiss</button></div>
-    <div class="small">Full log: Info → Log. Send it if the problem persists.</div>
+    <div class="small">Full log: Info → Troubleshooting.</div>
   </div>
 
   <section class="bar actions">
@@ -74,21 +74,29 @@
 
   <main>
     <section id="tab-live" class="tab">
-      <div id="veh" class="muted small veh"></div>
-      <div class="livebar">
-        <span id="rate" class="muted small rate"></span>
-        <label class="inline small">Chart <select id="chart-window" aria-label="chart window"></select></label>
+      <div id="live-empty" class="card empty">
+        <h4>Connect your OBD-II adapter</h4>
+        <ol class="small">
+          <li>Plug a Bluetooth OBD-II adapter into the port under the dashboard.</li>
+          <li>Turn the ignition on (engine can stay off).</li>
+          <li>Tap <b>Connect adapter</b>.</li>
+        </ol>
+        <p class="muted small">No adapter at hand? <b>Demo</b> shows the app with a simulated car.</p>
       </div>
-      <div id="tiles" class="tiles"></div>
-      <p class="muted small hint">Tap a tile to expand its chart. Top right: actual poll period. Green band / <i>ref</i>: normal range for the current state (engine running, warm, idle); dashed line on Lambda: commanded λ.</p>
-      <p id="rec-note" class="muted small"></p>
+      <div id="live-on" hidden>
+        <div class="livebar">
+          <span id="veh" class="muted small veh"></span>
+          <label class="inline small">Chart <select id="chart-window" aria-label="chart window"></select></label>
+        </div>
+        <div id="tiles" class="tiles"></div>
+        <p class="muted small hint">Tap a chart to expand it. Green band: normal range.</p>
+      </div>
     </section>
 
     <section id="tab-diag" class="tab" hidden>
       <div id="g-pick" class="card">
         <h4>Guided test</h4>
-        <p class="muted small">Step-by-step checklist. Records everything with step markers, reads DTCs and misfire
-          counters before and after, and writes per-step min/mean/max.</p>
+        <p class="muted small">Follow the steps; you get a report at the end.</p>
         <p id="g-hint" class="muted small">Connect the adapter (or Demo) to start.</p>
         <div id="g-presets" class="presets"></div>
       </div>
@@ -103,7 +111,7 @@
       </div>
       <div id="g-result" class="card" hidden></div>
       <div class="card">
-        <h4>DTCs and misfires</h4>
+        <h4>Trouble codes</h4>
         <div class="bar"><button id="read-diag" disabled>Read now</button></div>
         <div id="diag-out"></div>
       </div>
@@ -132,39 +140,34 @@
           <p class="muted small">Make-Model as in <a href="https://github.com/OBDb" target="_blank" rel="noopener">OBDb</a>. Leave empty to follow the detected car.</p>
         </details>
       </div>
+      <div class="card">
+        <h4>Values</h4>
+        <p class="muted small">What to read and how often. Fewer values = faster updates.</p>
+        <table class="pids"><tbody id="set-pids"></tbody></table>
+      </div>
       <div class="card" id="ext-card" hidden>
         <div class="g-head"><h4>Manufacturer values</h4><span id="ext-count" class="muted small"></span></div>
-        <p class="muted small">From the car's OBDb profile. Values the car doesn't answer are marked and skipped.
-          “unverified” — not yet confirmed for this model year.</p>
+        <p class="muted small">Extra values for this car from OBDb.</p>
         <input id="ext-q" class="text search" type="search" placeholder="Search: fuel, oil, misfire…" aria-label="Search manufacturer values">
         <div id="ext-list"></div>
       </div>
-      <div class="card">
-        <h4>Appearance</h4>
-        <div class="seg" id="theme" role="radiogroup" aria-label="Theme">
-          <button type="button" data-theme="auto" role="radio">Auto</button>
-          <button type="button" data-theme="light" role="radio">Light</button>
-          <button type="button" data-theme="dark" role="radio">Dark</button>
-        </div>
-      </div>
-      <div class="card">
-        <h4>Log</h4>
+      <details class="card more">
+        <summary><h4>More</h4></summary>
         <div class="form">
-          <label class="inline">Sample line every <select id="set-log"></select></label>
-          <label class="chk"><input type="checkbox" id="set-autorec"><span>Start recording automatically on connect</span></label>
-          <label class="chk"><input type="checkbox" id="set-deadband"><span>Extra line on sudden jumps (RPM, rail, throttle, load, speed)</span></label>
-          <label class="inline">Chart window <select id="set-window"></select></label>
+          <div class="inline">Theme
+            <div class="seg" id="theme" role="radiogroup" aria-label="Theme">
+              <button type="button" data-theme="auto" role="radio">Auto</button>
+              <button type="button" data-theme="light" role="radio">Light</button>
+              <button type="button" data-theme="dark" role="radio">Dark</button>
+            </div>
+          </div>
+          <label class="chk"><input type="checkbox" id="set-autorec"><span>Record automatically on connect</span></label>
+          <label class="inline">Log a sample every <select id="set-log"></select></label>
+          <label class="chk"><input type="checkbox" id="set-deadband"><span>Extra sample on sudden jumps</span></label>
         </div>
         <p id="set-est" class="muted small"></p>
-      </div>
-      <div class="card">
-        <h4>Polled values</h4>
-        <p class="muted small">Fewer values and slower intervals mean faster updates for the rest and a smaller log.
-          Slow-changing values (coolant, LTFT, voltage) don't need every cycle.</p>
-        <table class="pids"><tbody id="set-pids"></tbody></table>
-        <div class="bar"><button id="set-reset">Reset to defaults</button></div>
-      </div>
-      <p class="muted small">Settings are saved in this browser.</p>
+        <div class="bar"><button id="set-reset">Reset settings</button></div>
+      </details>
     </section>
 
     <section id="tab-report" class="tab" hidden>
@@ -179,15 +182,20 @@
     <section id="tab-info" class="tab" hidden>
       <div class="card">
         <h4>About</h4>
-        <p class="small" style="margin:0 0 6px">Built and tested on a <b>Ford Mustang 2.3 EcoBoost</b> with a UniCarScan UCSI-2100 (BLE ELM327).
-          Standard OBD-II (live PIDs, DTCs, freeze frame) should work on most 2008+ cars with CAN.</p>
-        <p class="small muted" style="margin:0 0 6px">Ford-tuned parts may not fit other cars: Mode 06 misfire MIDs, normal ranges
-          (<i>ref</i>), guided-test thresholds and the P008A notes. Not a replacement for a professional scan tool.</p>
-        <p class="small muted" style="margin:0">Manufacturer values come from <a href="https://github.com/OBDb" target="_blank" rel="noopener">OBDb</a>
-          (CC BY-SA 4.0); VINs are decoded with the NHTSA vPIC service.</p>
+        <p class="small">obdy reads live engine data, trouble codes and misfires from any 2008+ car with a Bluetooth
+          OBD-II adapter, and turns a recording into a plain-language report.</p>
+        <p class="small muted">Normal ranges and guided-test thresholds are tuned on a Ford Mustang 2.3 EcoBoost; other cars may differ.
+          A hint, not a replacement for a professional diagnosis. Manufacturer values: <a href="https://github.com/OBDb" target="_blank" rel="noopener">OBDb</a>
+          (CC BY-SA 4.0); VIN decoding: NHTSA vPIC.</p>
       </div>
-      <div class="card"><h4>Browser support</h4><ul id="caps" class="caps"></ul></div>
-      <div class="card"><h4>App log</h4><pre id="log" class="log"></pre></div>
+      <details class="card more">
+        <summary><h4>Troubleshooting</h4></summary>
+        <p class="muted small">If something doesn't work, copy the log and send it with a short description.</p>
+        <div class="bar"><button id="log-copy">Copy log</button></div>
+        <pre id="log" class="log"></pre>
+        <h4 class="sub">Device support</h4>
+        <ul id="caps" class="caps"></ul>
+      </details>
       <p class="muted small">obdy · <a href="https://github.com/artyrian/obdy" target="_blank" rel="noopener">source</a></p>
     </section>
   </main>

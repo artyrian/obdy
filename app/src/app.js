@@ -12,7 +12,7 @@ import { Series, draw, rateLabel } from "./ui/chart.js";
 import * as report from "./core/report.js";
 import { reportHtml } from "./ui/report.js";
 
-const VERSION = "0.5.2"; // keep in sync with package.json (checked by tests)
+const VERSION = "0.6.0"; // keep in sync with package.json (checked by tests)
 const BLUEFY_URL = "https://apps.apple.com/app/id1492822055";
 
 // write an extra S line when one of these moved by at least this much
@@ -108,6 +108,9 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => dr
 function setConnected(on) {
   $("connect").hidden = on; $("demo").hidden = on; $("disconnect").hidden = !on;
   $("rec").hidden = !on; $("read-diag").disabled = !on;
+  $("live-empty").hidden = on; $("live-on").hidden = !on;
+  if (!on) $("batt").hidden = true;
+  $("banner").hidden = on || !$("banner").innerHTML; // browser hints only matter before connecting
   document.querySelector(".logo").classList.toggle("live", on);
   updateStatus();
   updateGuideUI();
@@ -139,9 +142,10 @@ const allKeys = () => [...settings.enabled(st.cfg), ...extEnabled()];
 const REF_LINE = { "0134": "0144", "0123": "x.ECU_HPFP_Desired", "x.MUSTANG_LPFP_ACT": "x.MUSTANG_LPFP_DES" };
 
 function buildTiles() {
-  const open = st.open;
+  const open = st.open, keys = allKeys();
+  const refOnly = new Set(Object.entries(REF_LINE).filter(([a]) => keys.includes(a)).map(([, r]) => r));
   $("tiles").innerHTML = "";
-  for (const c of allKeys()) {
+  for (const c of keys.filter((k) => !refOnly.has(k))) {
     const d = document.createElement("div");
     d.className = "tile"; d.id = "t" + c;
     d.tabIndex = 0; d.setAttribute("role", "button"); d.setAttribute("aria-expanded", "false");
@@ -309,7 +313,6 @@ async function pollLoop() {
     const now = Date.now();
     const dt = (performance.now() - tRate) / 1000;
     if (dt > 2) {
-      $("rate").textContent = `${(n / dt).toFixed(1)} cmd/s · ${st.elm.rate.toFixed(0)} ms/cmd`;
       if (st.recording && now - st.lastRateW >= RATE_LOG_MS) { // poll speed in the journal: tells how dense S lines can be
         st.lastRateW = now;
         st.j.w("RATE", { cmd_s: +(n / dt).toFixed(1), ms_cmd: Math.round(st.elm.rate), fast: fastStep ? 1 : 0 });
@@ -408,10 +411,11 @@ async function pollExt(cmds, vals) {
 const MISF = [1, 2, 3, 4].map((n) => `MUSTANG_PCM_MISF_ACCEL_CYL${n}_NORM`);
 const PROFILE_DEFAULTS = {
   "Ford-Mustang": {
-    version: 2,
-    on: { MUSTANG_LPFP_ACT: 1000, MUSTANG_LPFP_DES: 2000, MUSTANG_LPFP_SENS_V: 1000, "[ECU] LPFP duty cycle": 2000,
-      "[ECU] HPFP Desired": 1000, "[ECU] HPFP sensor voltage": 5000, ...Object.fromEntries(MISF.map((m) => [m, 2000])) },
-    old: { MUSTANG_LPFP_DES: 1000, ...Object.fromEntries(MISF.map((m) => [m, 1000])) }, // v1 intervals
+    version: 3,
+    on: { MUSTANG_LPFP_ACT: 1000, MUSTANG_LPFP_DES: 2000, "[ECU] LPFP duty cycle": 2000, "[ECU] HPFP Desired": 1000 },
+    old: { MUSTANG_LPFP_DES: 1000 }, // v1 intervals
+    // v3: raw sensor voltages and per-cylinder misfire acceleration are niche; misfires come from Mode 06
+    off: { MUSTANG_LPFP_SENS_V: 1000, "[ECU] HPFP sensor voltage": 5000, ...Object.fromEntries(MISF.map((m) => [m, 2000])) },
   },
 };
 
@@ -454,10 +458,11 @@ async function useProfile(repos, year) {
       st.extLast = {}; st.extFail = {}; st.extBad = new Set(); st.extOk = new Set(); st.extZero = {};
       const defs = PROFILE_DEFAULTS[repo];
       if (defs) { // curated defaults: all on first connect, new ones added on upgrade
-        const on = {}, old = {};
+        const on = {}, old = {}, off = {};
         for (const [id, every] of Object.entries(defs.on)) if (sigs.has(obdb.keyOf(id))) on[obdb.keyOf(id)] = every;
         for (const [id, every] of Object.entries(defs.old || {})) old[obdb.keyOf(id)] = every;
-        if (settings.applyProfileDefaults(st.cfg, repo, { version: defs.version, on }, old)) settings.save(st.cfg);
+        for (const [id, every] of Object.entries(defs.off || {})) off[obdb.keyOf(id)] = every;
+        if (settings.applyProfileDefaults(st.cfg, repo, { version: defs.version, on, off }, old)) settings.save(st.cfg);
       } else if (!st.cfg.ext[repo]) { st.cfg.ext[repo] = {}; settings.save(st.cfg); }
       log(`profile ${repo} (${src}): ${sigs.size} values, ${extEnabled().length} on`);
       st.j?.w("PROFILE", { repo, src, year: year ?? "", values: sigs.size, on: extEnabled().length });
@@ -503,7 +508,7 @@ async function detectVehicle() {
 function renderVehicle() {
   const v = st.vehicle, p = st.profile;
   const name = v ? [v.year, v.make && obdb.repoCandidates(v.make)[0], v.model, v.engine].filter(Boolean).join(" ") : "";
-  $("veh").textContent = !st.elm ? "" : !v ? "" : `${name || "Unknown car"}${p ? ` · ${extEnabled().length} manufacturer values` : ""}`;
+  $("veh").textContent = !st.elm || !v ? "" : name || "Unknown car";
   $("veh-info").textContent = !v ? "Not detected yet — connect with the ignition on."
     : `${name || "Unknown car"}${v.vin ? ` · VIN ${v.vin}` : ""}`;
   $("veh-profile").innerHTML = "";
@@ -525,6 +530,7 @@ async function pollBattery(rpm) {
     if (v < 12.0) { cls = "bad"; state = "low — start engine or turn ignition off"; }
     else if (v < 12.3) cls = "warn";
   }
+  $("batt").hidden = false;
   $("batt").textContent = `🔋 ${v.toFixed(1)} V`;
   $("batt").className = "pill " + cls;
   $("batt").title = state;
@@ -712,13 +718,17 @@ async function renderLogs() {
     const row = document.createElement("div");
     row.className = "card logrow";
     const d = new Date(s.started);
-    row.innerHTML = `<div><b></b><div class="muted small"></div></div>
-      <div class="bar"><button data-a="report" class="primary">Report</button><button data-a="share">Share</button><button data-a="download">Download</button>
-      <button data-a="copy">Copy</button><button data-a="del">✕</button></div>`;
-    row.querySelector("b").textContent = d.toLocaleString();
-    row.querySelector(".small").textContent = `${s.adapter || ""}${s.demo ? " · demo" : ""} · ${s.id}`;
+    const share = isNative() || !!navigator.share;
+    row.innerHTML = `<div class="lr-head"><div><b></b><div class="muted small"></div></div>
+      <details class="menu"><summary aria-label="More actions">⋯</summary><div class="menu-pop">
+        ${share ? `<button data-a="download">Download</button>` : ""}<button data-a="copy">Copy text</button><button data-a="del" class="danger">Delete</button></div></details></div>
+      <div class="bar"><button data-a="report" class="primary">Report</button><button data-a="${share ? "share" : "download"}">${share ? "Share" : "Download"}</button></div>`;
+    row.querySelector("b").textContent = d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+    const mins = s.last ? Math.max(1, Math.round((s.last - s.started) / 60000)) : null;
+    row.querySelector(".small").textContent = [s.demo ? "Demo" : s.adapter, mins && `${mins} min`, st.j?.id === s.id && "recording now"].filter(Boolean).join(" · ");
     row.querySelectorAll("button").forEach((b) => {
       b.onclick = async () => {
+        b.closest("details")?.removeAttribute("open");
         if (b.dataset.a === "del") {
           if (st.j?.id === s.id) return toast("can't delete the active log");
           if (confirm("Delete log?")) { await deleteSession(s.id); renderLogs(); }
@@ -774,7 +784,6 @@ function renderSettings() {
   fillSelect($("set-log"), settings.LOG_CHOICES, cfg.logEvery, (v) => `${v / 1000} s`);
   $("set-deadband").checked = cfg.deadband;
   $("set-autorec").checked = cfg.autoRecord;
-  fillSelect($("set-window"), settings.WINDOW_CHOICES, cfg.window, (v) => `${v} min`);
   const tb = $("set-pids");
   tb.innerHTML = "";
   for (const p of settings.PID_OPTIONS) {
@@ -787,25 +796,22 @@ function renderSettings() {
     const cb = tr.querySelector("input");
     cb.checked = pc.on; cb.disabled = p.c === "010C";
     tr.querySelector("label span").textContent = p.label;
-    tr.querySelector("td.small").textContent = p.c === "010C" ? "required" : sup ? p.c : "not supported";
+    tr.querySelector("td.small").textContent = sup ? "" : "not supported";
     const sel = tr.querySelector("select");
     fillSelect(sel, settings.EVERY_CHOICES, pc.every, (v) => (v === 0 ? "every cycle" : `every ${v / 1000} s`));
-    sel.disabled = !pc.on;
+    sel.hidden = !pc.on;
     cb.onchange = () => { pc.on = cb.checked; applySettings(); };
     sel.onchange = () => { pc.every = Number(sel.value); applySettings(); };
     tb.append(tr);
   }
   const n = settings.enabled(cfg).length, ext = extEnabled();
-  $("set-est").textContent = `${n + ext.length} values · log ≈ `
-    + `${settings.estimateKbPerHour(cfg, 120, ext.map((k) => extCfg()[k].every))} KB per hour of recording`;
+  const kb = settings.estimateKbPerHour(cfg, 120, ext.map((k) => extCfg()[k].every));
+  $("set-est").textContent = `${n + ext.length} values · log ≈ ${kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " KB"} per hour`;
   renderExt();
-  $("rec-note").textContent = `Recording: a sample line every ${cfg.logEvery / 1000} s`
-    + `${cfg.deadband ? " (plus on sudden jumps)" : ""}, only values polled since the last line; `
-    + `DTCs and misfires every ${DTC_POLL_MS / 1000} s. Saved on this device immediately.`;
 }
 
 // manufacturer values list (Settings): grouped by OBDb "path", searchable
-const extOpen = new Set(["Engine"]);
+const extOpen = new Set();
 function renderExt() {
   $("set-useprofile").checked = st.cfg.useProfile;
   $("veh-repo").value = st.cfg.vehicle?.repo ?? "";
@@ -819,6 +825,11 @@ function renderExt() {
   st.extDirty = false;
   const q = $("ext-q").value.trim().toLowerCase(), cfg = (st.cfg.ext[p.repo] ??= {});
   const groups = new Map();
+  if (!q) { // what's on, always visible
+    const onRows = [...p.sigs].filter(([k]) => cfg[k]?.on).map(([k, { sig, cmd }]) => [k, sig, cmd]);
+    if (onRows.length) groups.set("On", onRows);
+    extOpen.add("On");
+  }
   for (const [k, { sig, cmd }] of p.sigs) {
     if (q && !`${sig.name} ${sig.id} ${cmd.key} ${sig.path}`.toLowerCase().includes(q)) continue;
     if (!groups.has(sig.path)) groups.set(sig.path, []);
@@ -826,14 +837,15 @@ function renderExt() {
   }
   $("ext-count").textContent = `${extEnabled().length} on · ${p.sigs.size} available`;
   box.innerHTML = "";
-  for (const [path, rows] of [...groups].sort((a, b) => (a[0] === "Engine" ? -1 : b[0] === "Engine" ? 1 : a[0].localeCompare(b[0])))) {
+  const order = (x) => (x === "On" ? 0 : x === "Engine" ? 1 : 2);
+  for (const [path, rows] of [...groups].sort((a, b) => order(a[0]) - order(b[0]) || a[0].localeCompare(b[0]))) {
     const det = document.createElement("details");
     const on = rows.filter(([k]) => cfg[k]?.on).length;
-    det.open = !!q || extOpen.has(path) || on > 0;
+    det.open = !!q || extOpen.has(path);
     det.ontoggle = () => (det.open ? extOpen.add(path) : extOpen.delete(path));
     det.innerHTML = `<summary><b></b> <span class="muted small"></span></summary><table class="pids"><tbody></tbody></table>`;
     det.querySelector("b").textContent = path;
-    det.querySelector("summary span").textContent = `${rows.length}${on ? ` · ${on} on` : ""}`;
+    det.querySelector("summary span").textContent = path === "On" ? `${rows.length}` : `${rows.length}${on ? ` · ${on} on` : ""}`;
     const tb = det.querySelector("tbody");
     // on first, then answered, then verified for this model year, then the rest
     const rank = ([k, , cmd]) => (cfg[k]?.on ? 0 : st.extOk.has(cmd.key) ? 1 : cmd.verified ? 2 : st.extBad.has(cmd.key) ? 4 : 3);
@@ -853,7 +865,7 @@ function renderExt() {
       const cb = tr.querySelector("input"), sel = tr.querySelector("select");
       cb.checked = c.on;
       fillSelect(sel, settings.EXT_EVERY, c.every, (v) => `every ${v / 1000} s`);
-      sel.disabled = !c.on;
+      sel.hidden = !c.on;
       cb.onchange = () => { cfg[k] = { ...c, on: cb.checked }; st.extBad.delete(cmd.key); st.extFail[cmd.key] = 0; applySettings(); };
       sel.onchange = () => { cfg[k] = { ...c, every: Number(sel.value) }; applySettings(); };
       tb.append(tr);
@@ -903,12 +915,10 @@ $("set-autorec").onchange = (e) => { st.cfg.autoRecord = e.target.checked; apply
 function setWindow(v) {
   st.cfg.window = v;
   settings.save(st.cfg);
-  fillSelect($("set-window"), settings.WINDOW_CHOICES, v, (x) => `${x} min`);
   syncWindow();
   drawCharts();
   if (st.recording) st.j.w("CFG", describeCfg());
 }
-$("set-window").onchange = (e) => setWindow(Number(e.target.value));
 $("chart-window").onchange = (e) => setWindow(Number(e.target.value));
 $("set-reset").onclick = () => { if (confirm("Reset settings to defaults?")) { st.cfg = settings.defaults(); applySettings(); } };
 function syncWindow() { fillSelect($("chart-window"), settings.WINDOW_CHOICES, st.cfg.window, (v) => `${v} min`); }
@@ -923,12 +933,10 @@ function renderPresets() {
   for (const [id, p] of Object.entries(guide.PRESETS)) {
     const b = document.createElement("button");
     b.className = "preset"; b.type = "button";
-    b.innerHTML = `<div class="p-head"><b></b><span class="muted small"></span></div><div class="small p-desc"></div>
-      <ol class="small muted"></ol>`;
+    b.innerHTML = `<div class="p-head"><b></b><span class="muted small"></span></div><div class="small p-desc"></div>`;
     b.querySelector("b").textContent = p.label;
     b.querySelector(".p-head span").textContent = p.time;
     b.querySelector(".p-desc").textContent = p.desc;
-    for (const s of p.steps()) { const li = document.createElement("li"); li.textContent = s.title; b.querySelector("ol").append(li); }
     b.onclick = () => startGuide(id);
     el.append(b);
   }
@@ -1135,11 +1143,8 @@ function renderCaps() {
     li.textContent = `${v ? "✅" : "❌"} ${k}`;
     $("caps").append(li);
   }
-  const li = document.createElement("li");
-  li.className = "muted small";
-  li.textContent = navigator.userAgent;
-  $("caps").append(li);
 }
+$("log-copy").onclick = () => copyText($("log").textContent).then(() => toast("log copied"));
 
 function showTab(name) {
   document.querySelectorAll(".tabs button").forEach((x) => {
