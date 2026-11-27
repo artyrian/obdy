@@ -35,6 +35,15 @@ export const DTC_TEXT = {
   P008A: "Low-pressure fuel system: pressure too low (in-tank pump / filter / sensor)",
   P008B: "Low-pressure fuel system: pressure too high",
   P0101: "Mass air flow sensor reading implausible — dirty MAF or intake leak",
+  P0190: "Fuel rail pressure sensor circuit",
+  P0191: "Fuel rail pressure sensor range/performance",
+  P0192: "Fuel rail pressure sensor circuit low",
+  P0193: "Fuel rail pressure sensor circuit high",
+  P018A: "Low-side fuel pressure sensor (sensor B) circuit",
+  P018B: "Low-side fuel pressure sensor (sensor B) range/performance",
+  P018C: "Low-side fuel pressure sensor (sensor B) circuit low — sensor, wiring or connector",
+  P018D: "Low-side fuel pressure sensor (sensor B) circuit high — sensor, wiring or connector",
+  P018E: "Low-side fuel pressure sensor (sensor B) intermittent",
   P0113: "Intake air temperature sensor: signal high",
   P0128: "Engine warms up too slowly — thermostat stuck open",
   P0171: "Running lean (bank 1) — vacuum/intake leak, weak fuel supply, dirty MAF",
@@ -90,9 +99,15 @@ const PAIRS = [
   { act: "0123", des: "x.ECU_HPFP_Desired", title: "High-pressure fuel (rail) below desired",
     why: "The high-pressure pump can't reach the pressure the engine asks for: weak low-side supply or worn HP pump." },
   { act: "x.MUSTANG_LPFP_ACT", des: "x.MUSTANG_LPFP_DES", title: "Low-side fuel pressure below desired",
-    why: "The in-tank pump/filter can't keep the commanded pressure — the usual cause of P008A." },
+    why: "The in-tank pump/filter can't keep the commanded pressure, or the low-side pressure sensor reads low (P008A, P018C)." },
 ];
 const PAIR_LOW = 0.85; // actual < 85 % of desired
+const FUEL_CUT_LAMBDA = 1.5;
+const MISFIRE_BAD = 5;   // misfire counts added during a recording to call it active
+const CRANK_MS = 5000;
+const newStat = () => ({ n: 0, sum: 0, min: Infinity, max: -Infinity });
+const addStat = (s, v) => { s.n++; s.sum += v; if (v < s.min) s.min = v; if (v > s.max) s.max = v; };
+const median = (a) => { const b = [...a].sort((x, y) => x - y); return b[b.length >> 1]; };
 const LEVEL = { ok: 0, warn: 1, bad: 2 };
 const worst = (a, b) => (LEVEL[b] > LEVEL[a] ? b : a);
 
@@ -111,7 +126,8 @@ export function analyze(text) {
   const mis = {};       // cyl -> { first, last, max, grew }
   const batt = { off: [], run: [] };
   const steps = [];
-  const pairs = PAIRS.map((p) => ({ ...p, n: 0, low: 0, worst: null }));
+  const pairs = PAIRS.map((p) => ({ ...p, n: 0, low: 0, worst: null, zero: 0 }));
+  let firstRun = null; // first sample with the engine running: cranking happens right before it
   let runT = 0, lastTs = null, maxEct = null, idleRpm = [];
 
   const code = (c) => codes.get(c) ?? (codes.set(c, { code: c, kinds: new Set(), flags: new Set(), during: false }), codes.get(c));
@@ -176,11 +192,12 @@ export function analyze(text) {
         break;
       }
       case "BATT":
-        if (typeof kv.v === "number" && typeof kv.rpm === "number") (kv.rpm > RUNNING_RPM ? batt.run : batt.off).push(kv.v);
+        if (typeof kv.v === "number" && typeof kv.rpm === "number") (kv.rpm > RUNNING_RPM ? batt.run : batt.off).push([ts, kv.v]);
         break;
       case "S": {
         for (const [k, v] of Object.entries(kv)) if (typeof v === "number" && k !== "t") latest[k] = v;
         const running = latest["010C"] > RUNNING_RPM;
+        if (running) firstRun ??= ts;
         if (running && lastTs != null) runT += Math.min(5000, ts - lastTs);
         lastTs = ts;
         if (latest["0105"] != null) maxEct = Math.max(maxEct ?? -99, latest["0105"]);
@@ -188,21 +205,27 @@ export function analyze(text) {
         for (const [k, v] of Object.entries(kv)) {
           if (typeof v !== "number" || k === "t") continue;
           (series[k] ??= []).push([ts, v]);
-          const a = (acc[k] ??= { n: 0, sum: 0, min: Infinity, max: -Infinity, ref: { n: 0, warn: 0, bad: 0, low: 0, high: 0 } });
-          a.n++; a.sum += v; a.min = Math.min(a.min, v); a.max = Math.max(a.max, v);
+          const a = (acc[k] ??= { all: newStat(), run: newStat(), ref: { n: 0, warn: 0, bad: 0, low: 0, high: 0 }, labels: new Map() });
+          addStat(a.all, v);
+          if (running) addStat(a.run, v);
+          // wideband pegged lean on deceleration = injectors off (fuel cut), not a lean engine
+          if (k === "0134" && (v >= FUEL_CUT_LAMBDA || latest["0144"] >= FUEL_CUT_LAMBDA)) continue;
           const r = refFor(k, latest);
           if (r) {
             const out = (b) => b && (v < b[0] || v > b[1]);
             a.ref.n++;
             if (out(r.bad)) a.ref.bad++; else if (out(r.warn)) a.ref.warn++;
             if (out(r.warn) || out(r.bad)) { if (v < r.lo) a.ref.low++; else a.ref.high++; }
-            a.band = [r.lo, r.hi];
+            const lab = k === "0134" ? "≈ commanded ±0.03" : r.label;
+            a.labels.set(lab, { band: k === "0134" ? null : [r.lo, r.hi], n: (a.labels.get(lab)?.n ?? 0) + 1 });
           }
         }
         if (running) for (const p of pairs) {
           const act = latest[p.act], des = latest[p.des];
           if (act == null || !(des > 0)) continue;
           const toPsi = (k, v) => ((keys[k]?.unit ?? (k === "0123" ? "kPa" : "")) === "kPa" ? v * KPA_PSI : v);
+          // a running engine can't have ~0 fuel pressure: that's the sensor/circuit dropping out, counted apart
+          if (toPsi(p.act, act) < 1) { p.zero++; continue; }
           const ratio = toPsi(p.act, act) / toPsi(p.des, des);
           p.n++;
           if (ratio < PAIR_LOW) p.low++;
@@ -227,17 +250,24 @@ export function analyze(text) {
     add(level, `${labelFor(k, keys)} ${dir ? "high" : "low"} (${Math.round(offF * 100)}% of the time)`, EXPLAIN[k][dir], k);
   }
   for (const p of pairs) {
+    if (p.zero >= 2) add("bad", `${labelFor(p.act, keys)} reads 0 with the engine running (${p.zero}×)`,
+      "Impossible while the engine runs: the pressure sensor, its wiring or connector drops out. Check this before replacing the pump.", p.act);
     if (p.n < 5 || p.low / p.n < 0.05) continue;
     add(p.low / p.n > 0.2 ? "bad" : "warn", p.title, `${p.why} Lowest: ${Math.round(p.worst * 100)}% of desired; below ${Math.round(PAIR_LOW * 100)}% in ${Math.round((p.low / p.n) * 100)}% of samples.`, p.act);
   }
-  for (const [cyl, m] of Object.entries(mis)) {
-    if (!m.max) continue;
-    add(m.grew ? "bad" : "warn", `Misfires: ${cyl.replace("cyl", "cylinder ")} (${m.max} this cycle)`,
-      m.grew ? "The count grew during the recording: an active misfire — spark plug, coil or injector on that cylinder."
+  const misCyl = Object.entries(mis).filter(([, m]) => m.max);
+  for (const [cyl, m] of misCyl) {
+    const grewBy = m.first != null ? m.last - m.first : m.grew ? 1 : 0;
+    const level = grewBy >= MISFIRE_BAD || m.max >= 2 * MISFIRE_BAD ? "bad" : "warn";
+    add(level, `Misfires: ${cyl.replace("cyl", "cylinder ")} (${m.max} this cycle)`,
+      m.grew ? `Grew during the recording${grewBy > 0 ? ` (+${grewBy})` : ""}: ${level === "bad" ? "an active misfire — spark plug, coil or injector on that cylinder" : "a few misfires; watch whether it keeps growing"}.`
         : "Counted by the engine computer this drive cycle, didn't grow while recording.", null);
   }
-  const bOff = batt.off.length ? Math.min(...batt.off) : null;
-  const bRun = batt.run.length ? Math.max(...batt.run) : null;
+  if (misCyl.length >= 3) add("warn", `Misfires on ${misCyl.length} cylinders`,
+    "Spread over several cylinders usually means a shared cause (fuel pressure, air leak, ignition supply), not one coil.", null);
+  const offRest = batt.off.filter(([t]) => firstRun == null || t < firstRun - CRANK_MS || t > firstRun).map(([, v]) => v);
+  const bOff = offRest.length ? median(offRest) : null; // cranking dips are normal, not a weak battery
+  const bRun = batt.run.length ? Math.max(...batt.run.map(([, v]) => v)) : null;
   if (bOff != null && bOff < 12.2) add(bOff < 11.9 ? "bad" : "warn", `Battery ${bOff.toFixed(1)} V with the engine off`, "Weak or discharged battery: charge it and have it load-tested.", "0142");
   if (bRun != null && bRun < 13.2) add("warn", `Charging voltage only ${bRun.toFixed(1)} V`, "The alternator may not be charging. Check belt, connections and alternator output.", "0142");
   if (runT > 15 * 60000 && maxEct != null && maxEct < 75) add("warn", `Engine never warmed up (max ${maxEct.toFixed(0)} °C in ${Math.round(runT / 60000)} min)`, EXPLAIN["0105"][0], "0105");
@@ -255,12 +285,19 @@ export function analyze(text) {
   }).sort((a, b) => LEVEL[b.level] - LEVEL[a.level] || a.code.localeCompare(b.code));
 
   findings.sort((a, b) => LEVEL[b.level] - LEVEL[a.level]);
+  for (let i = steps.length - 1; i >= 0; i--) if (steps[i].state === "started") steps.splice(i, 1);
   let verdict = "ok";
   for (const f of findings) verdict = worst(verdict, f.level);
   for (const c of codeList) verdict = worst(verdict, c.level);
 
   const summary = {};
-  for (const [k, a] of Object.entries(acc)) summary[k] = { min: a.min, mean: a.sum / a.n, max: a.max, n: a.n, band: a.band ?? null };
+  for (const [k, a] of Object.entries(acc)) {
+    // engine-off zeros (rpm 0, load 0) would drag the averages: use running samples when there are any
+    const st = a.run.n >= 3 && k !== "0142" ? a.run : a.all;
+    const top = [...a.labels].sort((x, y) => y[1].n - x[1].n)[0];
+    summary[k] = { min: st.min, mean: st.sum / st.n, max: st.max, n: st.n, running: st === a.run,
+      band: top?.[1].band ?? null, bandLabel: top?.[0] || "" };
+  }
   return {
     meta: { ...meta, durationS: meta.start ? Math.round((meta.end - meta.start) / 1000) : 0, runningS: Math.round(runT / 1000) },
     verdict, codes: codeList, findings, misfires: mis, battery: { off: bOff, run: bRun }, steps, keys, series, summary,
@@ -310,16 +347,24 @@ export function toText(rep) {
   out.push("", "## Findings");
   if (!rep.findings.length) out.push("- values stayed in normal ranges");
   for (const f of rep.findings) out.push(`- [${f.level}] ${f.title}: ${f.detail}`);
-  out.push("", "## Values (min / mean / max)");
+  out.push("", "## Values while the engine ran (min / mean / max)");
   for (const k of orderedKeys(rep)) {
     const s = rep.summary[k];
-    out.push(`- ${labelFor(k, rep.keys)}: ${fmtKey(k, s.min, rep.keys)} / ${fmtKey(k, s.mean, rep.keys)} / ${fmtKey(k, s.max, rep.keys)}${s.band ? ` (normal ${fmtKey(k, s.band[0], rep.keys)}–${fmtKey(k, s.band[1], rep.keys)})` : ""}`);
+    out.push(`- ${labelFor(k, rep.keys)}: ${fmtKey(k, s.min, rep.keys)} / ${fmtKey(k, s.mean, rep.keys)} / ${fmtKey(k, s.max, rep.keys)}${normalTxt(k, s, rep.keys) ? ` (normal ${normalTxt(k, s, rep.keys)})` : ""}`);
   }
+  out.push("Lambda readings at fuel cut (coasting) are excluded from the lambda checks.");
   if (rep.steps.some((s) => s.state === "done" || s.state === "skipped")) {
     out.push("", "## Test steps");
     for (const s of rep.steps) out.push(`- ${s.title}: ${s.state}${s.t != null ? ` (${Math.round(s.t)} s)` : ""}`);
   }
   return out.join("\n") + "\n";
+}
+
+/** "85–105 °C when warm", "≈ commanded ±0.03", or "" when there's no reference. */
+export function normalTxt(k, s, keys) {
+  if (!s.band) return s.bandLabel || "";
+  const cond = { "warm idle": "at warm idle", warm: "when warm", "warming up": "when warm", charging: "engine running", "engine off": "engine off" }[s.bandLabel];
+  return `${fmtKey(k, s.band[0], keys)}–${fmtKey(k, s.band[1], keys)}${cond ? ` ${cond}` : ""}`;
 }
 
 /** Keys for the values table: core first, then the rest with data. */

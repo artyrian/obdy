@@ -1,5 +1,5 @@
 // Report view: HTML for a report object (core/report.js). Inline SVG charts so it prints as-is.
-import { VERDICT_TEXT, labelFor, fmtKey, orderedKeys, CORE_KEYS } from "../core/report.js";
+import { VERDICT_TEXT, labelFor, fmtKey, orderedKeys, CORE_KEYS, normalTxt } from "../core/report.js";
 import { KPA_PSI } from "../core/pids.js";
 
 const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -93,11 +93,11 @@ export function reportHtml(rep, { version = "", lookup = true } = {}) {
 
   const vk = orderedKeys(rep);
   if (vk.length) {
-    h += `<section class="card"><h4>Values</h4><table class="rep-vals small"><tr><th></th><th>min</th><th>avg</th><th>max</th><th>normal</th></tr>`;
+    h += `<section class="card"><h4>Values</h4><p class="muted small">While the engine ran. Lambda at fuel cut (coasting) is not counted as lean.</p><table class="rep-vals small"><tr><th></th><th>min</th><th>avg</th><th>max</th><th>normal</th></tr>`;
     for (const k of vk) {
       const s = rep.summary[k];
       h += `<tr><td>${esc(labelFor(k, rep.keys))}</td><td>${esc(fmtKey(k, s.min, rep.keys))}</td><td>${esc(fmtKey(k, s.mean, rep.keys))}</td>
-        <td>${esc(fmtKey(k, s.max, rep.keys))}</td><td class="muted">${s.band ? esc(`${fmtKey(k, s.band[0], rep.keys)}–${fmtKey(k, s.band[1], rep.keys)}`) : ""}</td></tr>`;
+        <td>${esc(fmtKey(k, s.max, rep.keys))}</td><td class="muted">${esc(normalTxt(k, s, rep.keys))}</td></tr>`;
     }
     h += `</table></section>`;
   }

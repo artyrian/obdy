@@ -76,8 +76,38 @@ test("UDS raw gives flags; confirmed module code is a problem", () => {
 test("misfire count growing during recording is a problem", () => {
   const m = (s, n) => line("MISFIRE", { tag: "live", cyl: "cyl2", cycle: n, rpm: 760 }, at(s));
   assert.equal(analyze(log(m(1, 5), m(20, 5))).findings[0].level, "warn");
-  assert.equal(analyze(log(m(1, 5), m(20, 9))).findings[0].level, "bad");
+  assert.equal(analyze(log(m(1, 5), m(20, 9))).findings[0].level, "warn"); // a few more: watch it
+  assert.equal(analyze(log(m(1, 5), m(20, 12))).findings[0].level, "bad");
 });
+
+test("misfires spread over cylinders point to a shared cause", () => {
+  const m = (c, n) => line("MISFIRE", { tag: "live", cyl: c, cycle: n, rpm: 760 }, at(1));
+  const r = analyze(log(m("cyl1", 2), m("cyl2", 3), m("cyl3", 4)));
+  assert.ok(r.findings.some((f) => /3 cylinders/.test(f.title)));
+});
+
+test("low-side pressure: zero readings are a sensor dropout, not part of the ratio", () => {
+  const r = analyze(log(samples(30, (i) => ({ "x.MUSTANG_LPFP_ACT": i % 10 ? 62 : 0, "x.MUSTANG_LPFP_DES": 65 }))));
+  assert.ok(r.findings.some((f) => /reads 0/.test(f.title) && f.level === "bad"));
+  assert.ok(!r.findings.some((f) => /below desired/.test(f.title))); // 62/65 is fine
+});
+
+test("lambda at fuel cut isn't 'lean'; values use running samples; band carries its condition", () => {
+  const r = analyze(log(line("S", { "010C": 0, "0105": 60 }, at(0)),
+    samples(30, (i) => ({ "0134": i % 3 ? 1.0 : 2.0, "0144": 1.0, "0111": i % 3 ? 15 : 0 }))));
+  assert.ok(!r.findings.some((f) => f.key === "0134"));
+  assert.equal(r.summary["010C"].min, 750); // the engine-off 0 rpm isn't in the stats
+  assert.match(toText(r), /600 rpm–900 rpm at warm idle/);
+  assert.match(toText(r), /≈ commanded/);
+});
+
+test("battery: cranking dip right before start isn't 'weak battery'", () => {
+  const r = analyze(log(line("BATT", { v: 12.6, rpm: 0, state: "engine off" }, at(0)),
+    line("BATT", { v: 10.9, rpm: 0, state: "engine off" }, at(1)), samples(10)));
+  assert.ok(!r.findings.some((f) => /engine off/.test(f.title)));
+});
+
+test("P018C has a plain-words text", () => assert.match(dtcText("P018C"), /sensor/));
 
 test("guided steps are listed with their titles", () => {
   const r = analyze(log(line("STEP", { id: "begin", event: "start", preset: "quick" }, at(1)),
